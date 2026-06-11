@@ -23,7 +23,7 @@ export function CardHeader({ children, className = "", ...props }) {
 export function CardTitle({ children, className = "", ...props }) {
   return (
     <h3
-      className={`text-lg font-semibold text-slate-100 tracking-tight leading-none ${className}`}
+      className={`text-lg font-semibold text-slate-800 dark:text-slate-100 tracking-tight leading-none ${className}`}
       {...props}
     >
       {children}
@@ -33,7 +33,7 @@ export function CardTitle({ children, className = "", ...props }) {
 
 export function CardDescription({ children, className = "", ...props }) {
   return (
-    <p className={`text-sm text-slate-400 ${className}`} {...props}>
+    <p className={`text-sm text-slate-500 dark:text-slate-400 ${className}`} {...props}>
       {children}
     </p>
   );
