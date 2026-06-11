@@ -13,7 +13,11 @@ import {
   Check, 
   X,
   Layers,
-  ShoppingBag
+  ShoppingBag,
+  ChevronLeft,
+  ChevronRight,
+  Calendar,
+  ChevronDown
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
@@ -35,6 +39,89 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
   const [searchQuery, setSearchQuery] = useState("");
   const [logFilter, setLogFilter] = useState("all"); // 'all', 'masuk', 'keluar'
 
+  // --- Group collapse state ---
+  const [collapsedProducts, setCollapsedProducts] = useState({});
+
+  const toggleProductCollapse = (prodId) => {
+    setCollapsedProducts(prev => ({
+      ...prev,
+      [prodId]: !prev[prodId]
+    }));
+  };
+
+  // --- Date Filter for Card 1 ---
+  const [selectedStockDate, setSelectedStockDate] = useState(() => {
+    return new Date().toISOString().substring(0, 10);
+  });
+
+  const dateInputRef = React.useRef(null);
+  const [transactionViewMode, setTransactionViewMode] = useState("all"); // 'all' or 'tambah_stok'
+
+  const handlePrevDate = () => {
+    const d = new Date(selectedStockDate);
+    d.setDate(d.getDate() - 1);
+    setSelectedStockDate(d.toISOString().substring(0, 10));
+  };
+
+  const handleNextDate = () => {
+    const d = new Date(selectedStockDate);
+    d.setDate(d.getDate() + 1);
+    const todayStr = new Date().toISOString().substring(0, 10);
+    if (d.toISOString().substring(0, 10) <= todayStr) {
+      setSelectedStockDate(d.toISOString().substring(0, 10));
+    }
+  };
+
+  const formatSelectedStockDate = (dateStr) => {
+    const todayStr = new Date().toISOString().substring(0, 10);
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().substring(0, 10);
+
+    if (dateStr === todayStr) return "Hari Ini";
+    if (dateStr === yesterdayStr) return "Kemarin";
+    
+    return new Date(dateStr).toLocaleDateString("id-ID", {
+      day: "numeric",
+      month: "short",
+      year: "numeric"
+    });
+  };
+
+  const totalStockInputtedOnDate = React.useMemo(() => {
+    return inventoryLogs
+      .filter((l) => l.type === "masuk" && new Date(l.date).toISOString().substring(0, 10) === selectedStockDate)
+      .reduce((sum, l) => sum + l.qty, 0);
+  }, [inventoryLogs, selectedStockDate]);
+
+  const totalCurrentStock = React.useMemo(() => {
+    return products.reduce((sum, item) => sum + (item.stock || 0), 0);
+  }, [products]);
+
+  // Group variants by product to show boxes per product
+  const groupedProducts = React.useMemo(() => {
+    const groups = {};
+    const filtered = products.filter(p =>
+      p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      p.sku.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+    filtered.forEach(item => {
+      const pId = item.productId;
+      if (!groups[pId]) {
+        groups[pId] = {
+          productId: pId,
+          productName: item.productName,
+          category: item.category,
+          totalStock: 0,
+          variants: []
+        };
+      }
+      groups[pId].variants.push(item);
+      groups[pId].totalStock += (item.stock || 0);
+    });
+    return Object.values(groups);
+  }, [products, searchQuery]);
+
   // Modal Open states
   const [isStockInOpen, setIsStockInOpen] = useState(false);
   const [isEditLogOpen, setIsEditLogOpen] = useState(false);
@@ -46,15 +133,13 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
   const [formSuccess, setFormSuccess] = useState("");
 
   // --- stock_in Form State ---
-  const [selectedProductId, setSelectedProductId] = useState(rawProducts[0]?.id || "");
-  const [variantInputs, setVariantInputs] = useState({}); // { [variantId]: { qty: 0, price: 35000 } }
+  const [productBlocks, setProductBlocks] = useState([]); // [{ id, productId, quantities: { [varId]: qty } }]
   const [transactionDate, setTransactionDate] = useState(() => new Date().toISOString().substring(0, 10));
   const [transactionNote, setTransactionNote] = useState("");
 
   // --- Edit Transaction State ---
   const [editingLog, setEditingLog] = useState(null);
   const [editLogQty, setEditLogQty] = useState(1);
-  const [editLogPrice, setEditLogPrice] = useState(0);
   const [editLogDate, setEditLogDate] = useState("");
   const [editLogNote, setEditLogNote] = useState("");
 
@@ -80,67 +165,71 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
   const [deletedVariantIds, setDeletedVariantIds] = useState([]);
 
   // Reset form inputs for Stock In when product changes or modal opens
-  const initStockInForm = (productId) => {
-    const prod = rawProducts.find(p => p.id === productId);
-    if (!prod) return;
-
-    setSelectedProductId(productId);
-    
-    // Pre-populate quantities and prices
-    const inputs = {};
-    const variants = prod.product_variants || [];
-    
-    // Fallback default price helper
-    let defaultPrice = 35000;
-    if (prod.name.toLowerCase().includes("bola")) defaultPrice = 25000;
-    else if (prod.name.toLowerCase().includes("aero")) defaultPrice = 35000;
-
-    variants.forEach(v => {
-      inputs[v.id] = { qty: 0, price: defaultPrice };
-    });
-    setVariantInputs(inputs);
-    setTransactionDate(new Date().toISOString().substring(0, 10));
-    setTransactionNote("");
+  const handleAddBlock = () => {
+    setProductBlocks(prev => [...prev, {
+      id: `block-${Date.now()}-${Math.random()}`,
+      productId: "",
+      quantities: {}
+    }]);
   };
 
-  const handleProductChange = (e) => {
-    initStockInForm(e.target.value);
+  const handleRemoveBlock = (blockId) => {
+    setProductBlocks(prev => prev.filter(b => b.id !== blockId));
   };
 
-  // Adjust variant stock in quantity
-  const handleVariantQtyChange = (variantId, delta) => {
-    setVariantInputs(prev => {
-      const current = prev[variantId] || { qty: 0, price: 35000 };
-      const newQty = Math.max(0, current.qty + delta);
-      return {
-        ...prev,
-        [variantId]: { ...current, qty: newQty }
-      };
-    });
+  const handleBlockProductChange = (blockId, prodId) => {
+    const prod = rawProducts.find(p => p.id === prodId);
+    const initialQuantities = {};
+    if (prod) {
+      (prod.product_variants || []).forEach(v => {
+        if (v.is_active) {
+          initialQuantities[v.id] = 0;
+        }
+      });
+    }
+    setProductBlocks(prev => prev.map(b => {
+      if (b.id === blockId) {
+        return {
+          ...b,
+          productId: prodId,
+          quantities: initialQuantities
+        };
+      }
+      return b;
+    }));
   };
 
-  const handleVariantQtyValChange = (variantId, val) => {
+  const handleVariantQtyChange = (blockId, variantId, delta) => {
+    setProductBlocks(prev => prev.map(b => {
+      if (b.id === blockId) {
+        const currentQty = b.quantities[variantId] || 0;
+        return {
+          ...b,
+          quantities: {
+            ...b.quantities,
+            [variantId]: Math.max(0, currentQty + delta)
+          }
+        };
+      }
+      return b;
+    }));
+  };
+
+  const handleVariantQtyValChange = (blockId, variantId, val) => {
     const intVal = parseInt(val, 10);
     const cleanVal = isNaN(intVal) || intVal < 0 ? 0 : intVal;
-    setVariantInputs(prev => {
-      const current = prev[variantId] || { qty: 0, price: 35000 };
-      return {
-        ...prev,
-        [variantId]: { ...current, qty: cleanVal }
-      };
-    });
-  };
-
-  const handleVariantPriceChange = (variantId, val) => {
-    const floatVal = parseFloat(val);
-    const cleanPrice = isNaN(floatVal) || floatVal < 0 ? 0 : floatVal;
-    setVariantInputs(prev => {
-      const current = prev[variantId] || { qty: 0, price: 35000 };
-      return {
-        ...prev,
-        [variantId]: { ...current, price: cleanPrice }
-      };
-    });
+    setProductBlocks(prev => prev.map(b => {
+      if (b.id === blockId) {
+        return {
+          ...b,
+          quantities: {
+            ...b.quantities,
+            [variantId]: cleanVal
+          }
+        };
+      }
+      return b;
+    }));
   };
 
   // Submit stock_in entries to Supabase
@@ -151,21 +240,26 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
 
     try {
       const entriesToSubmit = [];
-      Object.keys(variantInputs).forEach(varId => {
-        const item = variantInputs[varId];
-        if (item.qty > 0) {
-          entriesToSubmit.push({
-            variant_id: varId,
-            quantity: item.qty,
-            price: item.price,
-            date: transactionDate || new Date().toISOString().substring(0, 10),
-            note: transactionNote || "Restock manual"
-          });
-        }
+      productBlocks.forEach(block => {
+        if (!block.productId) return;
+        const prod = rawProducts.find(p => p.id === block.productId);
+        if (!prod) return;
+
+        Object.keys(block.quantities).forEach(variantId => {
+          const qty = block.quantities[variantId] || 0;
+          if (qty > 0) {
+            entriesToSubmit.push({
+              variant_id: variantId,
+              quantity: qty,
+              date: transactionDate || new Date().toISOString().substring(0, 10),
+              note: transactionNote || "Restock manual"
+            });
+          }
+        });
       });
 
       if (entriesToSubmit.length === 0) {
-        setFormError("Masukkan jumlah (quantity) minimal pada satu varian.");
+        setFormError("Pilih minimal satu variasi dengan jumlah lebih dari 0.");
         return;
       }
 
@@ -179,6 +273,7 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
       setTimeout(() => {
         setIsStockInOpen(false);
         setFormSuccess("");
+        setProductBlocks([]);
       }, 1000);
 
     } catch (err) {
@@ -202,7 +297,6 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
   const handleLogEditClick = (log) => {
     setEditingLog(log);
     setEditLogQty(log.qty);
-    setEditLogPrice(log.price);
     setEditLogDate(new Date(log.date).toISOString().substring(0, 10));
     setEditLogNote(log.notes);
     setFormError("");
@@ -220,7 +314,6 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
       }
       await updateStockIn(editingLog.id, {
         quantity: editLogQty,
-        price: editLogPrice,
         date: editLogDate,
         note: editLogNote
       });
@@ -444,15 +537,23 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
       alert("Belum ada data produk terdaftar. Silakan tambahkan produk terlebih dahulu.");
       return;
     }
-    initStockInForm(rawProducts[0]?.id);
+    setProductBlocks([]);
+    setTransactionDate(new Date().toISOString().substring(0, 10));
+    setTransactionNote("");
     setFormError("");
     setFormSuccess("");
     setIsStockInOpen(true);
   };
 
-  // Filter logs by type and search query
+  // Filter logs by type, search query, and selectedStockDate
   const filteredLogs = inventoryLogs
-    .filter(log => logFilter === "all" || log.type === logFilter)
+    .filter(log => {
+      if (transactionViewMode === "tambah_stok") {
+        return log.type === "masuk";
+      }
+      return logFilter === "all" || log.type === logFilter;
+    })
+    .filter(log => new Date(log.date).toISOString().substring(0, 10) === selectedStockDate)
     .filter(log => 
       log.productName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (log.notes && log.notes.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -476,19 +577,19 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
   return (
     <div className="space-y-6">
       {/* Sub-Tabs Selector */}
-      <div className="flex border-b border-slate-800">
+      <div className="flex border-b border-slate-200 dark:border-slate-800 overflow-x-auto pb-px">
         <button
           onClick={() => {
             setActiveSubTab("transactions");
             setSearchQuery("");
           }}
-          className={`px-5 py-3 text-sm font-semibold transition-all border-b-2 cursor-pointer flex items-center gap-2 ${
+          className={`px-5 py-3 text-sm font-semibold transition-all border-b-2 cursor-pointer flex items-center gap-2 whitespace-nowrap ${
             activeSubTab === "transactions"
-              ? "border-violet-500 text-slate-100"
-              : "border-transparent text-slate-400 hover:text-slate-200"
+              ? "border-violet-500 text-slate-800 dark:text-slate-100"
+              : "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
           }`}
         >
-          <ArrowDownLeft className="w-4 h-4 text-emerald-400" />
+          <ArrowDownLeft className="w-4 h-4 text-emerald-555 dark:text-emerald-400" />
           Transaksi Barang Masuk
         </button>
         <button
@@ -496,13 +597,13 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
             setActiveSubTab("products");
             setSearchQuery("");
           }}
-          className={`px-5 py-3 text-sm font-semibold transition-all border-b-2 cursor-pointer flex items-center gap-2 ${
+          className={`px-5 py-3 text-sm font-semibold transition-all border-b-2 cursor-pointer flex items-center gap-2 whitespace-nowrap ${
             activeSubTab === "products"
-              ? "border-violet-500 text-slate-100"
-              : "border-transparent text-slate-400 hover:text-slate-200"
+              ? "border-violet-500 text-slate-800 dark:text-slate-100"
+              : "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
           }`}
         >
-          <Layers className="w-4 h-4 text-violet-400" />
+          <Layers className="w-4 h-4 text-violet-500 dark:text-violet-400" />
           Kelola Produk & Varian (CRUD)
         </button>
       </div>
@@ -510,72 +611,128 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
       {activeSubTab === "transactions" ? (
         <>
           {/* Summary Cards Row */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Card>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+            <Card 
+              onClick={() => {
+                setActiveSubTab("products");
+                setSearchQuery("");
+              }}
+              className="cursor-pointer hover:border-violet-500/40 hover:bg-slate-50/50 dark:hover:bg-slate-900/10 transition-all"
+            >
               <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold text-slate-400">Total Varian Terdaftar</span>
-                <div className="w-8 h-8 rounded-lg bg-violet-500/10 border border-violet-500/20 flex items-center justify-center text-violet-400">
+                <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">Total Varian Terdaftar</span>
+                <div className="w-8 h-8 rounded-lg bg-violet-500/10 border border-violet-500/20 flex items-center justify-center text-violet-600 dark:text-violet-400">
                   <FileText className="w-4 h-4" />
                 </div>
               </div>
               <div className="mt-4">
-                <h3 className="text-2xl font-bold text-slate-100">{products.length} SKU</h3>
-                <p className="text-xs text-slate-500 mt-1 font-medium">Model barang di database</p>
+                <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100">{products.length} SKU</h3>
+                <p className="text-xs text-slate-500 mt-1 font-medium">Model barang di toko</p>
               </div>
             </Card>
-
-            <Card>
+            <Card
+              onClick={() => setTransactionViewMode("tambah_stok")}
+              className={`cursor-pointer transition-all ${
+                transactionViewMode === "tambah_stok"
+                  ? "border-emerald-500 ring-1 ring-emerald-500/25 bg-emerald-50/10 dark:bg-emerald-950/5"
+                  : "hover:border-slate-350 dark:hover:border-slate-800"
+              }`}
+            >
               <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold text-slate-400">Total Pemasukan (Barang Masuk)</span>
-                <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+                <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">Barang Masuk per Tanggal</span>
+                <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
                   <ArrowDownLeft className="w-4 h-4" />
                 </div>
               </div>
-              <div className="mt-4">
-                <h3 className="text-2xl font-bold text-slate-100">
-                  {inventoryLogs.filter((l) => l.type === "masuk").reduce((sum, l) => sum + l.qty, 0)} pcs
-                </h3>
-                <p className="text-xs text-slate-500 mt-1 font-medium">Stok masuk tercatat di Supabase</p>
+              <div className="mt-4 flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100">
+                    {totalStockInputtedOnDate} pcs
+                  </h3>
+                  <div className="relative">
+                    <input
+                      ref={dateInputRef}
+                      type="date"
+                      value={selectedStockDate}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val && val <= new Date().toISOString().substring(0, 10)) {
+                          setSelectedStockDate(val);
+                        }
+                      }}
+                      max={new Date().toISOString().substring(0, 10)}
+                      className="absolute w-0 h-0 opacity-0 pointer-events-none"
+                      title="Pilih Tanggal"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (dateInputRef.current) {
+                          if (typeof dateInputRef.current.showPicker === "function") {
+                            dateInputRef.current.showPicker();
+                          } else {
+                            dateInputRef.current.click();
+                          }
+                        }
+                      }}
+                      className="p-1.5 px-2.5 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-850 text-slate-655 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer z-20"
+                    >
+                      <Calendar className="w-3.5 h-3.5 text-violet-555 dark:text-violet-400" />
+                      <span className="text-xs font-semibold">Pilih Tanggal</span>
+                    </button>
+                  </div>
+                </div>
+                <div className="text-xs font-semibold text-slate-655 dark:text-slate-400 flex items-center gap-1.5 mt-0.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                  <span>{formatSelectedStockDate(selectedStockDate)}</span>
+                </div>
               </div>
             </Card>
 
-            <Card>
+            <Card 
+              onClick={() => setTransactionViewMode("all")}
+              className={`cursor-pointer transition-all sm:col-span-2 md:col-span-1 ${
+                transactionViewMode === "all"
+                  ? "border-sky-500 ring-1 ring-sky-500/25 bg-sky-50/10 dark:bg-sky-950/5"
+                  : "hover:border-slate-350 dark:hover:border-slate-800"
+              }`}
+            >
               <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold text-slate-400">Nilai Pembelian Barang</span>
-                <div className="w-8 h-8 rounded-lg bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400 font-bold">
-                  Rp
+                <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">Total Stok Saat Ini</span>
+                <div className="w-8 h-8 rounded-lg bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-600 dark:text-sky-400">
+                  <ArrowUpRight className="w-4 h-4" />
                 </div>
               </div>
               <div className="mt-4">
-                <h3 className="text-2xl font-bold text-slate-100">
-                  {formatIDR(
-                    inventoryLogs.filter((l) => l.type === "masuk").reduce((sum, l) => sum + (l.qty * l.price), 0)
-                  )}
+                <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100">
+                  {totalCurrentStock} Pcs
                 </h3>
-                <p className="text-xs text-slate-500 mt-1 font-medium">Total modal aset masuk</p>
+                <p className="text-xs text-slate-500 mt-1 font-medium">Stok fisik setelah dikurangi pesanan</p>
               </div>
             </Card>
           </div>
 
           {/* Core Table Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Left Column (Span 2) - Incoming Logs List */}
-            <Card className="lg:col-span-2">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Left Column - Incoming Logs List */}
+            <Card>
               <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                  <CardTitle>Riwayat Transaksi Stok</CardTitle>
-                  <CardDescription>Catatan pemasukan Supabase dan pengeluaran simulasi offline/marketplace.</CardDescription>
+                  <CardTitle>
+                    {transactionViewMode === "tambah_stok" ? "Riwayat Tambah Stok" : "Riwayat Transaksi Stok"}
+                  </CardTitle>
+                  {/* <CardDescription>Catatan jumlah stok</CardDescription> */}
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <div className="relative">
-                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
+                  <div className="relative flex-1 sm:flex-initial">
+                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
                     <input
                       type="text"
                       placeholder="Cari barang/catatan..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className="glass-input pl-9 w-44"
+                      className="glass-input pl-9 w-full sm:w-44"
                     />
                   </div>
                   <Button
@@ -583,8 +740,9 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
                     size="sm"
                     icon={Plus}
                     onClick={handleOpenStockIn}
+                    className="w-full sm:w-auto justify-center whitespace-nowrap shrink-0"
                   >
-                    Catat Barang Masuk
+                    Tambah Stok
                   </Button>
                 </div>
               </CardHeader>
@@ -596,8 +754,6 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
                       <TableHead>Tipe</TableHead>
                       <TableHead>Nama Barang</TableHead>
                       <TableHead className="text-center">Jumlah</TableHead>
-                      <TableHead className="text-right">Harga Beli</TableHead>
-                      <TableHead className="text-right">Total</TableHead>
                       <TableHead>Keterangan</TableHead>
                       <TableHead className="text-center">Aksi</TableHead>
                     </TableRow>
@@ -605,7 +761,7 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
                   <TableBody>
                     {filteredLogs.map((log) => (
                       <TableRow key={log.id}>
-                        <TableCell className="font-mono text-xs text-slate-400">
+                        <TableCell className="font-mono text-xs text-slate-500 dark:text-slate-400">
                           {new Date(log.date).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "2-digit" })}
                         </TableCell>
                         <TableCell>
@@ -613,20 +769,14 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
                             {log.type === "masuk" ? "Masuk" : "Keluar"}
                           </Badge>
                         </TableCell>
-                        <TableCell className="font-semibold text-slate-200">
+                        <TableCell className="font-semibold text-slate-800 dark:text-slate-200">
                           {log.productName}
                         </TableCell>
                         <TableCell className="text-center font-mono font-bold">
                           {log.type === "masuk" ? "+" : "-"}
                           {log.qty} pcs
                         </TableCell>
-                        <TableCell className="text-right font-mono text-slate-300">
-                          {log.type === "masuk" ? formatIDR(log.price) : "-"}
-                        </TableCell>
-                        <TableCell className="text-right font-mono text-emerald-400 font-semibold">
-                          {log.type === "masuk" ? formatIDR(log.qty * log.price) : "-"}
-                        </TableCell>
-                        <TableCell className="text-xs text-slate-400 max-w-[150px] truncate italic" title={log.notes}>
+                        <TableCell className="text-xs text-slate-550 dark:text-slate-400 max-w-[150px] truncate italic" title={log.notes}>
                           {log.notes}
                         </TableCell>
                         <TableCell className="text-center">
@@ -634,28 +784,28 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
                             <div className="flex items-center justify-center gap-1.5">
                               <button
                                 onClick={() => handleLogEditClick(log)}
-                                className="p-1 text-slate-400 hover:text-violet-400 transition-colors"
+                                className="p-1 text-slate-500 dark:text-slate-400 hover:text-violet-650 dark:hover:text-violet-400 transition-colors cursor-pointer"
                                 title="Edit Transaksi"
                               >
                                 <Edit className="w-3.5 h-3.5" />
                               </button>
                               <button
                                 onClick={() => handleLogDelete(log.id)}
-                                className="p-1 text-slate-400 hover:text-rose-400 transition-colors"
+                                className="p-1 text-slate-500 dark:text-slate-400 hover:text-rose-650 dark:hover:text-rose-450 transition-colors cursor-pointer"
                                 title="Hapus Transaksi"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
                             </div>
                           ) : (
-                            <span className="text-slate-600 text-[10px] italic">Simulasi</span>
+                            <span className="text-slate-500 dark:text-slate-600 text-[10px] italic">Simulasi</span>
                           )}
                         </TableCell>
                       </TableRow>
                     ))}
                     {filteredLogs.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={8} className="text-center py-8 text-slate-500">
+                        <TableCell colSpan={6} className="text-center py-8 text-slate-400 dark:text-slate-500">
                           Tidak ada data transaksi ditemukan.
                         </TableCell>
                       </TableRow>
@@ -665,46 +815,81 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
               </CardContent>
             </Card>
 
-            {/* Right Column (Span 1) - Current Stock Levels */}
-            <Card>
-              <CardHeader className="border-b border-slate-800/40 pb-3">
-                <CardTitle>Stok Barang Saat Ini</CardTitle>
-                <CardDescription>Stok real-time (Pemasukan - Penjualan) untuk masing-masing varian.</CardDescription>
-              </CardHeader>
-              <CardContent className="pt-4 max-h-[500px] overflow-y-auto space-y-3 pr-1">
-                {products.map((item) => (
-                  <div 
-                    key={item.id}
-                    className="p-3 rounded-lg bg-slate-900/40 border border-slate-850 hover:border-slate-800 transition-colors flex items-center justify-between"
-                  >
-                    <div>
-                      <p className="font-mono text-[10px] text-violet-400 font-semibold">{item.sku}</p>
-                      <h4 className="text-xs font-bold text-slate-200 mt-0.5">{item.name}</h4>
-                      <p className="text-[10px] text-slate-500 mt-1">
-                        Kategori: <span className="text-slate-400">{item.category}</span>
-                      </p>
+            {/* Right Column (Span 1) - Current Stock Levels grouped by Product */}
+            <div className="space-y-4 max-h-[600px] overflow-y-auto pr-1">
+              <div className="border-b border-slate-200 dark:border-slate-800/40 pb-3 mb-2">
+                <h3 className="text-base font-bold text-slate-800 dark:text-slate-100">Stok Barang Saat Ini</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Dikelompokkan per produk dan variasi.</p>
+              </div>
+
+              {groupedProducts.length === 0 ? (
+                <p className="text-center text-slate-400 dark:text-slate-500 text-xs py-8 bg-slate-50 dark:bg-slate-900/20 rounded-xl border border-slate-200 dark:border-slate-850">
+                  Tidak ada data produk ditemukan.
+                </p>
+              ) : (
+                groupedProducts.map((group) => (
+                  <Card key={group.productId} className="overflow-hidden border-slate-200 dark:border-slate-855 hover:border-slate-350 dark:hover:border-slate-800 transition-colors">
+                    {/* Product Header (Clickable for Collapse/Extend) */}
+                    <div 
+                      onClick={() => toggleProductCollapse(group.productId)}
+                      className="p-3 bg-slate-50/80 dark:bg-slate-900/40 border-b border-slate-200/60 dark:border-slate-800/40 flex items-center justify-between cursor-pointer select-none hover:bg-slate-100/80 dark:hover:bg-slate-900/60 transition-colors"
+                    >
+                      <div className="flex items-center gap-2">
+                        <ChevronDown 
+                          className={`w-4 h-4 text-slate-400 dark:text-slate-500 transition-transform duration-200 shrink-0 ${
+                            collapsedProducts[group.productId] ? "-rotate-90" : ""
+                          }`}
+                        />
+                        <div>
+                          <h4 className="text-xs font-extrabold text-slate-855 dark:text-slate-200 uppercase tracking-wider">{group.productName}</h4>
+                          <span className="text-[9px] font-semibold text-slate-500 dark:text-slate-550 uppercase tracking-wider bg-slate-200/50 dark:bg-slate-800/50 px-1.5 py-0.5 rounded-md mt-1 inline-block">
+                            {group.category}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span 
+                          className={`font-mono font-extrabold text-xs px-2.5 py-1 rounded-md border shadow-sm ${
+                            group.totalStock <= 100
+                              ? "bg-rose-500/10 text-rose-600 dark:text-rose-455 border-rose-500/20"
+                              : group.totalStock <= 200
+                              ? "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border-yellow-500/20"
+                              : "bg-emerald-500/10 text-emerald-650 dark:text-emerald-455 border-emerald-500/20"
+                          }`}
+                        >
+                          Total: {group.totalStock} pcs
+                        </span>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <span 
-                        className={`font-mono font-bold text-xs px-2 py-0.5 rounded ${
-                          item.stock <= 10
-                            ? "bg-rose-500/10 text-rose-400 border border-rose-500/25"
-                            : item.stock <= 25
-                            ? "bg-amber-500/10 text-amber-400 border border-amber-500/25"
-                            : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/25"
-                        }`}
-                      >
-                        {item.stock} pcs
-                      </span>
-                      <p className="text-[10px] text-slate-400 mt-1.5 font-mono">{formatIDR(item.price)}</p>
-                    </div>
-                  </div>
-                ))}
-                {products.length === 0 && (
-                  <p className="text-center py-10 text-xs text-slate-500">Belum ada variasi produk terdaftar.</p>
-                )}
-              </CardContent>
-            </Card>
+
+                    {/* Variants list */}
+                    {!collapsedProducts[group.productId] && (
+                      <CardContent className="p-3 space-y-2 bg-white dark:bg-slate-950/20 animate-in fade-in duration-200">
+                        {group.variants.map((v) => (
+                          <div key={v.id} className="flex items-center justify-between text-xs py-1 border-b border-dashed border-slate-100 dark:border-slate-900 last:border-0 last:pb-0">
+                            <div className="flex flex-col">
+                              <span className="font-semibold text-slate-700 dark:text-slate-300">{v.variantLabel}</span>
+                              <span className="font-mono text-[9px] text-slate-400 dark:text-slate-550">{v.sku}</span>
+                            </div>
+                            <span 
+                              className={`font-mono font-extrabold text-xs px-2 py-0.5 rounded border ${
+                                v.stock <= 100
+                                  ? "bg-rose-550/5 text-rose-600 dark:text-rose-400 border-rose-500/10"
+                                  : v.stock <= 200
+                                  ? "bg-yellow-550/5 text-yellow-600 dark:text-yellow-400 border-yellow-500/10"
+                                  : "bg-emerald-550/5 text-emerald-600 dark:text-emerald-400 border-emerald-500/10"
+                              }`}
+                            >
+                              {v.stock} pcs
+                            </span>
+                          </div>
+                        ))}
+                      </CardContent>
+                    )}
+                  </Card>
+                ))
+              )}
+            </div>
           </div>
         </>
       ) : (
@@ -715,15 +900,15 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
               <CardTitle>Master Data Produk & Varian</CardTitle>
               <CardDescription>Tambah, ubah, dan hapus master data produk beserta detail variasi/ukuran.</CardDescription>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="relative">
-                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
+              <div className="relative flex-1 sm:flex-initial">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
                 <input
                   type="text"
                   placeholder="Cari nama produk..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="glass-input pl-9 w-44"
+                  className="glass-input pl-9 w-full sm:w-44"
                 />
               </div>
               <Button
@@ -735,6 +920,7 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
                   setFormSuccess("");
                   setIsAddProductOpen(true);
                 }}
+                className="w-full sm:w-auto justify-center"
               >
                 Tambah Produk
               </Button>
@@ -765,15 +951,15 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
 
                     return (
                       <TableRow key={product.id}>
-                        <TableCell className="font-bold text-slate-200">
+                        <TableCell className="font-bold text-slate-800 dark:text-slate-200">
                           {product.name}
                         </TableCell>
                         <TableCell>
-                          <span className="text-xs px-2 py-0.5 rounded-md bg-slate-900 border border-slate-800 text-slate-400">
+                          <span className="text-xs px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-850 text-slate-600 dark:text-slate-400 font-medium">
                             {product.category || "Lainnya"}
                           </span>
                         </TableCell>
-                        <TableCell className="text-xs text-slate-300">
+                        <TableCell className="text-xs text-slate-600 dark:text-slate-350">
                           {product.variant_type || "Warna"}
                         </TableCell>
                         <TableCell className="text-center">
@@ -781,21 +967,21 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
                             {product.has_size ? "Ya" : "Tidak"}
                           </Badge>
                         </TableCell>
-                        <TableCell className="max-w-[250px] truncate text-xs text-slate-400" title={variantsList || sizesList}>
+                        <TableCell className="max-w-[250px] truncate text-xs text-slate-500 dark:text-slate-400" title={variantsList || sizesList}>
                           {product.has_size ? `Ukuran: ${sizesList}` : `Varian: ${variantsList}`}
                         </TableCell>
                         <TableCell className="text-center">
                           <div className="flex items-center justify-center gap-2">
                             <button
                               onClick={() => handleProductEditClick(product)}
-                              className="p-1 text-slate-400 hover:text-violet-400 transition-colors"
+                              className="p-1 text-slate-500 dark:text-slate-400 hover:text-violet-600 dark:hover:text-violet-400 transition-colors cursor-pointer"
                               title="Edit Detail Produk"
                             >
                               <Edit className="w-4 h-4" />
                             </button>
                             <button
                               onClick={() => handleProductDelete(product.id)}
-                              className="p-1 text-slate-400 hover:text-rose-400 transition-colors"
+                              className="p-1 text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-450 transition-colors cursor-pointer"
                               title="Hapus Produk & Data Terkait"
                             >
                               <Trash2 className="w-4 h-4" />
@@ -807,7 +993,7 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
                   })}
                 {rawProducts.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8 text-slate-500">
+                    <TableCell colSpan={6} className="text-center py-8 text-slate-400 dark:text-slate-550">
                       Belum ada produk di database. Silakan tambah produk baru.
                     </TableCell>
                   </TableRow>
@@ -823,6 +1009,7 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
         isOpen={isStockInOpen}
         onClose={() => setIsStockInOpen(false)}
         title="Catat Barang Masuk (Restock)"
+        className="max-w-2xl"
       >
         <form onSubmit={handleStockInSubmit} className="space-y-4 pt-2">
           {formError && (
@@ -839,91 +1026,120 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
             </div>
           )}
 
-          {/* Product dropdown selector */}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-slate-300">Pilih Produk Utama</label>
-            <select
-              value={selectedProductId}
-              onChange={handleProductChange}
-              className="glass-input w-full bg-slate-900 text-sm"
-            >
-              {rawProducts.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          {/* List of Product Blocks */}
+          <div className="space-y-4 max-h-[350px] overflow-y-auto pr-1">
+            {productBlocks.map((block) => (
+              <div key={block.id} className="relative border border-slate-200 dark:border-slate-800 rounded-xl p-4 bg-slate-50/50 dark:bg-slate-950/40 space-y-3">
+                {/* Block Header with Close/Remove button */}
+                <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
+                  <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Blok Barang Masuk</span>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveBlock(block.id)}
+                    className="text-slate-400 hover:text-rose-500 transition-colors p-1 cursor-pointer"
+                    title="Hapus blok produk"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
 
-          {/* Flexible variant quantity editor grid */}
-          <div className="flex flex-col gap-2 border border-slate-800 rounded-lg p-3 bg-slate-950/40">
-            <label className="text-xs font-semibold text-slate-400 border-b border-slate-800 pb-1.5 mb-1">
-              Variasi & Jumlah Masuk
-            </label>
-            <div className="space-y-3 max-h-[200px] overflow-y-auto pr-1">
-              {rawProducts
-                .find(p => p.id === selectedProductId)
-                ?.product_variants?.filter(v => v.is_active)
-                .map((variant) => {
-                  const sizeLabel = variant.product_sizes?.size_label || "";
-                  const label = sizeLabel ? `Ukuran ${sizeLabel}` : variant.variant_label;
-                  const inputData = variantInputs[variant.id] || { qty: 0, price: 35000 };
+                {/* Dropdown for selecting product */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">Pilih Produk</label>
+                  <select
+                    value={block.productId}
+                    onChange={(e) => handleBlockProductChange(block.id, e.target.value)}
+                    className="glass-input w-full bg-white dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-200"
+                  >
+                    <option value="">-- Pilih Produk --</option>
+                    {rawProducts
+                      .filter(p => p.id === block.productId || !productBlocks.some(b => b.id !== block.id && b.productId === p.id))
+                      .map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                  </select>
+                </div>
 
-                  return (
-                    <div key={variant.id} className="flex items-center justify-between gap-4 py-1 border-b border-slate-900/35 last:border-b-0">
-                      <span className="text-xs font-bold text-slate-200 min-w-[100px]">{label}</span>
-                      
-                      {/* Price field per variant */}
-                      <div className="flex items-center gap-1">
-                        <span className="text-[10px] text-slate-500">Rp</span>
-                        <input
-                          type="number"
-                          value={inputData.price}
-                          onChange={(e) => handleVariantPriceChange(variant.id, e.target.value)}
-                          placeholder="Harga Beli"
-                          className="glass-input w-20 py-0.5 text-center text-xs font-mono"
-                        />
-                      </div>
+                {/* If product is selected, show its variants and sizes inside this block */}
+                {block.productId && (
+                  <div className="space-y-2.5 pt-2 border-t border-slate-200 dark:border-slate-800">
+                    <label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Variasi & Jumlah Masuk</label>
+                    <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
+                      {rawProducts
+                        .find(p => p.id === block.productId)
+                        ?.product_variants?.filter(v => v.is_active)
+                        .map((variant) => {
+                          const sizeLabel = variant.product_sizes?.size_label || "";
+                          const varLabel = variant.variant_label || "";
+                          const label = sizeLabel && varLabel 
+                            ? `Ukuran ${sizeLabel} - ${varLabel}` 
+                            : (sizeLabel ? `Ukuran ${sizeLabel}` : varLabel);
+                          
+                          const qty = block.quantities[variant.id] || 0;
 
-                      {/* Quantity adjuster with - [+] + */}
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => handleVariantQtyChange(variant.id, -1)}
-                          className="text-slate-400 hover:text-slate-200 transition-colors"
-                        >
-                          <MinusCircle className="w-5 h-5" />
-                        </button>
-                        <input
-                          type="number"
-                          value={inputData.qty}
-                          onChange={(e) => handleVariantQtyValChange(variant.id, e.target.value)}
-                          className="glass-input w-12 py-0.5 text-center text-xs font-bold font-mono"
-                          min="0"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handleVariantQtyChange(variant.id, 1)}
-                          className="text-violet-400 hover:text-violet-300 transition-colors"
-                        >
-                          <PlusCircle className="w-5 h-5" />
-                        </button>
-                      </div>
+                          return (
+                            <div key={variant.id} className="flex items-center justify-between gap-4 py-1 border-b border-slate-200 dark:border-slate-900/35 last:border-b-0">
+                              <span className="text-xs text-slate-700 dark:text-slate-200 font-medium">{label}</span>
+                              
+                              {/* Qty Counter */}
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleVariantQtyChange(block.id, variant.id, -1)}
+                                  className="text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                                >
+                                  <MinusCircle className="w-5 h-5" />
+                                </button>
+                                <input
+                                  type="number"
+                                  value={qty}
+                                  onChange={(e) => handleVariantQtyValChange(block.id, variant.id, e.target.value)}
+                                  className="glass-input w-20 py-0.5 text-center text-xs font-bold font-mono"
+                                  min="0"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleVariantQtyChange(block.id, variant.id, 1)}
+                                  className="text-violet-650 dark:text-violet-400 hover:text-violet-500 dark:hover:text-violet-300 transition-colors cursor-pointer"
+                                >
+                                  <PlusCircle className="w-5 h-5" />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
                     </div>
-                  );
-                })}
-              
-              {(!rawProducts.find(p => p.id === selectedProductId)?.product_variants || 
-                rawProducts.find(p => p.id === selectedProductId)?.product_variants?.filter(v => v.is_active).length === 0) && (
-                <p className="text-center py-4 text-xs text-slate-500">Produk ini tidak memiliki variasi aktif.</p>
-              )}
-            </div>
+                  </div>
+                )}
+              </div>
+            ))}
+
+            {productBlocks.length === 0 && (
+              <div className="text-center py-8 border border-dashed border-slate-350 dark:border-slate-850 rounded-xl bg-slate-50/30 dark:bg-slate-950/20">
+                <p className="text-xs text-slate-500 dark:text-slate-450 italic">Belum ada produk yang ditambahkan. Silakan klik "+ Tambah Produk" di bawah.</p>
+              </div>
+            )}
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          {/* Add Product Button */}
+          <div className="flex justify-center pt-1">
+            <button
+              type="button"
+              onClick={handleAddBlock}
+              disabled={productBlocks.length >= rawProducts.length}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-slate-350 dark:border-slate-700 text-xs font-medium text-slate-600 dark:text-slate-350 hover:bg-slate-100 dark:hover:bg-slate-900 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Plus className="w-4 h-4" />
+              Tambah Produk
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 border-t border-slate-200 dark:border-slate-800 pt-3">
             {/* Transaction Date */}
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-slate-300">Tanggal Masuk</label>
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Tanggal Masuk</label>
               <input
                 type="date"
                 value={transactionDate}
@@ -935,7 +1151,7 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
 
             {/* Note field */}
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-slate-300">Catatan</label>
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Catatan</label>
               <input
                 type="text"
                 placeholder="e.g. Restock supplier"
@@ -947,7 +1163,7 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
           </div>
 
           {/* Action buttons */}
-          <div className="flex items-center justify-end gap-2 border-t border-slate-800 pt-3 mt-4">
+          <div className="flex items-center justify-end gap-2 border-t border-slate-200 dark:border-slate-800 pt-3 mt-4">
             <Button variant="ghost" size="sm" type="button" onClick={() => setIsStockInOpen(false)}>
               Batal
             </Button>
@@ -973,38 +1189,24 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
           )}
 
           <div className="flex flex-col gap-1">
-            <label className="text-xs font-semibold text-slate-400">Nama Produk / Varian</label>
-            <p className="text-sm font-bold text-slate-200">{editingLog?.productName}</p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-slate-300">Jumlah (Qty)</label>
-              <input
-                type="number"
-                value={editLogQty}
-                onChange={(e) => setEditLogQty(parseInt(e.target.value, 10) || 0)}
-                min="1"
-                required
-                className="glass-input w-full font-mono text-sm"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-slate-300">Harga Beli Satuan (Rp)</label>
-              <input
-                type="number"
-                value={editLogPrice}
-                onChange={(e) => setEditLogPrice(parseFloat(e.target.value) || 0)}
-                min="0"
-                required
-                className="glass-input w-full font-mono text-sm"
-              />
-            </div>
+            <label className="text-xs font-semibold text-slate-550 dark:text-slate-400">Nama Produk / Varian</label>
+            <p className="text-sm font-bold text-slate-800 dark:text-slate-200">{editingLog?.productName}</p>
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-slate-300">Tanggal Masuk</label>
+            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Jumlah (Qty)</label>
+            <input
+              type="number"
+              value={editLogQty}
+              onChange={(e) => setEditLogQty(parseInt(e.target.value, 10) || 0)}
+              min="1"
+              required
+              className="glass-input w-full font-mono text-sm"
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Tanggal Masuk</label>
             <input
               type="date"
               value={editLogDate}
@@ -1015,7 +1217,7 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-slate-300">Catatan</label>
+            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Catatan</label>
             <input
               type="text"
               value={editLogNote}
@@ -1024,7 +1226,7 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
             />
           </div>
 
-          <div className="flex items-center justify-end gap-2 border-t border-slate-800 pt-3 mt-4">
+          <div className="flex items-center justify-end gap-2 border-t border-slate-200 dark:border-slate-800 pt-3 mt-4">
             <Button variant="ghost" size="sm" type="button" onClick={() => setIsEditLogOpen(false)}>
               Batal
             </Button>
@@ -1057,7 +1259,7 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
           )}
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-slate-300">Nama Produk</label>
+            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Nama Produk</label>
             <input
               type="text"
               placeholder="e.g. Kaos Kaki Bola, Sepatu Futsal"
@@ -1070,7 +1272,7 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
 
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-slate-300">Kategori</label>
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Kategori</label>
               <input
                 type="text"
                 placeholder="e.g. Aksesoris, Pakaian"
@@ -1082,7 +1284,7 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-slate-300">Tipe Varian</label>
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Tipe Varian</label>
               <input
                 type="text"
                 placeholder="e.g. Warna, Ukuran"
@@ -1095,7 +1297,7 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
           </div>
 
           {/* Toggle has size */}
-          <div className="flex items-center gap-2 py-1.5 border-t border-b border-slate-900">
+          <div className="flex items-center gap-2 py-1.5 border-t border-b border-slate-200 dark:border-slate-900">
             <input
               type="checkbox"
               id="hasSizeCheckbox"
@@ -1105,9 +1307,9 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
                 // Switch default type accordingly
                 setNewProductVarType(e.target.checked ? "Ukuran" : "Warna");
               }}
-              className="w-4 h-4 text-violet-600 bg-slate-900 border-slate-800 rounded focus:ring-violet-500 cursor-pointer"
+              className="w-4 h-4 text-violet-600 bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-800 rounded focus:ring-violet-500 cursor-pointer"
             />
-            <label htmlFor="hasSizeCheckbox" className="text-xs font-semibold text-slate-300 cursor-pointer select-none">
+            <label htmlFor="hasSizeCheckbox" className="text-xs font-semibold text-slate-700 dark:text-slate-300 cursor-pointer select-none">
               Produk memiliki ukuran (misal: SD, SMP, L, XL)
             </label>
           </div>
@@ -1115,7 +1317,7 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
           {newProductHasSize ? (
             /* Size Input Interface */
             <div className="flex flex-col gap-2">
-              <label className="text-xs font-semibold text-slate-300">Daftar Ukuran</label>
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Daftar Ukuran</label>
               <div className="flex items-center gap-2">
                 <input
                   type="text"
@@ -1133,22 +1335,22 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
               {/* Added sizes tags */}
               <div className="flex flex-wrap gap-1.5 mt-1">
                 {addedSizes.map((s) => (
-                  <span key={s} className="px-2 py-1 rounded bg-violet-600/25 border border-violet-500/35 text-[10px] font-bold text-violet-300 flex items-center gap-1.5">
+                  <span key={s} className="px-2 py-1 rounded bg-violet-500/10 dark:bg-violet-600/25 border border-violet-500/30 dark:border-violet-500/35 text-[10px] font-bold text-violet-650 dark:text-violet-300 flex items-center gap-1.5">
                     {s}
-                    <button type="button" onClick={() => handleRemoveSize(s)} className="hover:text-rose-400 transition-colors">
+                    <button type="button" onClick={() => handleRemoveSize(s)} className="hover:text-rose-500 transition-colors">
                       <X className="w-3 h-3" />
                     </button>
                   </span>
                 ))}
                 {addedSizes.length === 0 && (
-                  <p className="text-[10px] text-slate-500 italic">Belum ada ukuran ditambahkan.</p>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-500 italic">Belum ada ukuran ditambahkan.</p>
                 )}
               </div>
             </div>
           ) : (
             /* Custom Colors/Variants Input Interface */
             <div className="flex flex-col gap-2">
-              <label className="text-xs font-semibold text-slate-300">Daftar Varian (Warna / Lainnya)</label>
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Daftar Varian (Warna / Lainnya)</label>
               <div className="flex items-center gap-2">
                 <input
                   type="text"
@@ -1166,21 +1368,21 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
               {/* Added variants tags */}
               <div className="flex flex-wrap gap-1.5 mt-1">
                 {addedVariants.map((v) => (
-                  <span key={v} className="px-2 py-1 rounded bg-violet-600/25 border border-violet-500/35 text-[10px] font-bold text-violet-300 flex items-center gap-1.5">
+                  <span key={v} className="px-2 py-1 rounded bg-violet-500/10 dark:bg-violet-600/25 border border-violet-500/30 dark:border-violet-500/35 text-[10px] font-bold text-violet-650 dark:text-violet-300 flex items-center gap-1.5">
                     {v}
-                    <button type="button" onClick={() => handleRemoveVariantLabel(v)} className="hover:text-rose-400 transition-colors">
+                    <button type="button" onClick={() => handleRemoveVariantLabel(v)} className="hover:text-rose-500 transition-colors">
                       <X className="w-3 h-3" />
                     </button>
                   </span>
                 ))}
                 {addedVariants.length === 0 && (
-                  <p className="text-[10px] text-slate-500 italic">Belum ada variasi ditambahkan.</p>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-500 italic">Belum ada variasi ditambahkan.</p>
                 )}
               </div>
             </div>
           )}
 
-          <div className="flex items-center justify-end gap-2 border-t border-slate-800 pt-3 mt-4">
+          <div className="flex items-center justify-end gap-2 border-t border-slate-200 dark:border-slate-800 pt-3 mt-4">
             <Button variant="ghost" size="sm" type="button" onClick={() => setIsAddProductOpen(false)}>
               Batal
             </Button>
@@ -1213,7 +1415,7 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
           )}
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-slate-300">Nama Produk</label>
+            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Nama Produk</label>
             <input
               type="text"
               value={editProductName}
@@ -1225,7 +1427,7 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
 
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-slate-300">Kategori</label>
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Kategori</label>
               <input
                 type="text"
                 value={editProductCategory}
@@ -1236,7 +1438,7 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-slate-300">Tipe Varian</label>
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Tipe Varian</label>
               <input
                 type="text"
                 value={editProductVarType}
@@ -1248,21 +1450,21 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
           </div>
 
           {/* Manage existing variants list */}
-          <div className="flex flex-col gap-2 border border-slate-800 rounded-lg p-3 bg-slate-950/40">
-            <label className="text-xs font-semibold text-slate-400 border-b border-slate-800 pb-1.5">
+          <div className="flex flex-col gap-2 border border-slate-200 dark:border-slate-800 rounded-lg p-3 bg-slate-50/50 dark:bg-slate-950/40">
+            <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800 pb-1.5">
               Kelola Variasi Aktif
             </label>
             
             <div className="space-y-2.5 max-h-[220px] overflow-y-auto pr-1">
               {editProductVariants.map((variant, idx) => (
-                <div key={idx} className="flex items-center justify-between gap-3 py-1 border-b border-slate-900/40 last:border-b-0">
+                <div key={idx} className="flex items-center justify-between gap-3 py-1 border-b border-slate-200/50 dark:border-slate-900/40 last:border-b-0">
                   <input
                     type="text"
                     value={variant.variant_label}
                     onChange={(e) => handleEditVariantLabelChange(idx, e.target.value)}
                     required
-                    className={`glass-input text-xs py-1 px-2 flex-1 bg-slate-900 border-slate-800 ${
-                      variant.is_active ? "text-slate-200 font-bold" : "text-slate-500 line-through"
+                    className={`glass-input text-xs py-1 px-2 flex-1 bg-white dark:bg-slate-900 border-slate-250 dark:border-slate-800 ${
+                      variant.is_active ? "text-slate-800 dark:text-slate-200 font-bold" : "text-slate-400 dark:text-slate-500 line-through"
                     }`}
                   />
                   
@@ -1272,8 +1474,8 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
                       onClick={() => handleToggleVariantActive(idx)}
                       className={`px-2 py-1 text-[10px] font-bold rounded border cursor-pointer select-none transition-all ${
                         variant.is_active
-                          ? "bg-emerald-500/10 border-emerald-500/25 text-emerald-400"
-                          : "bg-slate-900 border-slate-800 text-slate-500 hover:text-slate-400"
+                          ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400"
+                          : "bg-white dark:bg-slate-900 border-slate-250 dark:border-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-slate-400"
                       }`}
                     >
                       {variant.is_active ? "Aktif" : "Non-aktif"}
@@ -1282,7 +1484,7 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
                     <button
                       type="button"
                       onClick={() => handleDeleteVariantInEdit(idx)}
-                      className="p-1 text-slate-400 hover:text-rose-400 transition-colors cursor-pointer"
+                      className="p-1 text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-455 transition-colors cursor-pointer"
                       title="Hapus Varian"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -1293,7 +1495,7 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
             </div>
 
             {/* Add new variant element inside edit product screen */}
-            <div className="flex items-center gap-2 border-t border-slate-900 pt-2.5 mt-2">
+            <div className="flex items-center gap-2 border-t border-slate-200 dark:border-slate-900 pt-2.5 mt-2">
               <input
                 type="text"
                 placeholder={editingProduct?.has_size ? "Tambah ukuran baru..." : "Tambah warna/variasi baru..."}
@@ -1307,7 +1509,7 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
             </div>
           </div>
 
-          <div className="flex items-center justify-end gap-2 border-t border-slate-800 pt-3 mt-4">
+          <div className="flex items-center justify-end gap-2 border-t border-slate-200 dark:border-slate-800 pt-3 mt-4">
             <Button variant="ghost" size="sm" type="button" onClick={() => setIsEditProductOpen(false)}>
               Batal
             </Button>

@@ -17,9 +17,9 @@ export function Button({
 
   const variants = {
     primary: "bg-violet-600 hover:bg-violet-500 text-white shadow-lg shadow-violet-600/10 border border-violet-500/20",
-    secondary: "bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700/80",
-    outline: "bg-transparent hover:bg-slate-800/50 text-slate-300 border border-slate-700 hover:text-slate-100",
-    ghost: "bg-transparent hover:bg-slate-800/40 text-slate-400 hover:text-slate-200",
+    secondary: "bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-100 border border-slate-200 dark:border-slate-700/80",
+    outline: "bg-transparent hover:bg-slate-100 dark:hover:bg-slate-800/50 text-slate-650 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:text-slate-900 dark:hover:text-slate-100",
+    ghost: "bg-transparent hover:bg-slate-100 dark:hover:bg-slate-800/40 text-slate-500 dark:text-slate-400 hover:text-slate-850 dark:hover:text-slate-200",
     danger: "bg-rose-600 hover:bg-rose-500 text-white shadow-lg shadow-rose-600/10 border border-rose-500/20",
     success: "bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/10 border border-emerald-500/20",
   };

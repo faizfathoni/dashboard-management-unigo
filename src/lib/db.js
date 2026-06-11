@@ -74,10 +74,10 @@ export async function addStockIn(entries) {
 /**
  * Update an existing stock_in entry.
  */
-export async function updateStockIn(id, { quantity, price, date, note }) {
+export async function updateStockIn(id, { quantity, date, note }) {
   const { data, error } = await supabase
     .from('stock_in')
-    .update({ quantity, price, date, note })
+    .update({ quantity, date, note })
     .eq('id', id)
     .select()
 
@@ -348,25 +348,40 @@ export function mapInventoryItems(rawProducts, stockInLogs, orders = []) {
       // 2. Calculate outgoing stock from success orders in local state
       const successOrders = orders.filter(o => o.status === "pengiriman sukses");
       const totalOutgoing = successOrders.reduce((sum, order) => {
-        const orderItem = (order.items || []).find(item => item.productId === variant.id);
+        const orderItem = (order.items || []).find(item => {
+          if (item.productId === variant.id) return true;
+          if (order.isImported) {
+            const itemProdName = (product.name || "").toLowerCase();
+            const itemVarLabel = (variant.variant_label || "").toLowerCase();
+            const itemSizeLabel = (variant.product_sizes?.size_label || "").toLowerCase();
+
+            const orderProdName = (item.product_name || "").toLowerCase();
+            const orderVar = (item.variation || "").toLowerCase();
+
+            // Match product name
+            const prodNameMatch = orderProdName.includes(itemProdName) || itemProdName.includes(orderProdName);
+            if (!prodNameMatch) return false;
+
+            // Match size/variant labels
+            if (itemSizeLabel && orderVar.includes(itemSizeLabel.toLowerCase())) {
+              if (itemVarLabel && !orderVar.includes(itemVarLabel.toLowerCase())) {
+                return false;
+              }
+              return true;
+            }
+            if (itemVarLabel && orderVar.includes(itemVarLabel.toLowerCase())) {
+              return true;
+            }
+            if (!itemSizeLabel && !itemVarLabel && !orderVar) {
+              return true;
+            }
+          }
+          return false;
+        });
         return sum + (orderItem ? orderItem.qty : 0);
       }, 0);
 
       const stock = Math.max(0, totalIncoming - totalOutgoing);
-
-      // 3. Determine price
-      // Fetch latest price from stock_in logs, or use fallback
-      const latestLogWithPrice = variantStockLogs.find(log => log.price > 0);
-      let price = latestLogWithPrice ? parseFloat(latestLogWithPrice.price) : null;
-      if (!price) {
-        if (product.name.toLowerCase().includes('bola')) {
-          price = 25000;
-        } else if (product.name.toLowerCase().includes('aero')) {
-          price = 35000;
-        } else {
-          price = 50000;
-        }
-      }
 
       // 4. Generate SKU
       const initials = product.name.split(' ').map(w => w[0]).join('').toUpperCase();
@@ -377,7 +392,9 @@ export function mapInventoryItems(rawProducts, stockInLogs, orders = []) {
       const sku = `${initials}-${variantCode}`;
 
       // 5. Variant label display
-      const variantLabelDisplay = sizeLabel ? `Ukuran ${sizeLabel}` : varLabel;
+      const variantLabelDisplay = sizeLabel && varLabel 
+        ? `Ukuran ${sizeLabel} - ${varLabel}` 
+        : (sizeLabel ? `Ukuran ${sizeLabel}` : varLabel);
 
       items.push({
         id: variant.id, // matches the variant ID so orders link correctly
@@ -387,7 +404,6 @@ export function mapInventoryItems(rawProducts, stockInLogs, orders = []) {
         variantLabel: variantLabelDisplay,
         sku,
         category: product.category || 'Lainnya',
-        price,
         stock,
         rawProduct: product,
         rawVariant: variant
@@ -396,5 +412,68 @@ export function mapInventoryItems(rawProducts, stockInLogs, orders = []) {
   });
 
   return items;
+}
+
+/**
+ * Fetch all orders from Supabase orders table.
+ */
+export async function fetchOrders() {
+  const { data, error } = await supabase
+    .from('orders')
+    .select('*')
+    .order('created_time', { ascending: false })
+
+  if (error) {
+    console.error('Error fetching orders:', error)
+    throw error
+  }
+  return data || []
+}
+
+/**
+ * Import multiple orders and log the import.
+ */
+export async function importOrders(platform, filename, ordersArray, onProgress) {
+  if (ordersArray.length === 0) return { orders: [], importLog: null }
+
+  const CHUNK_SIZE = 200;
+  const allResults = [];
+
+  // Upsert in chunks to avoid database statement timeouts
+  for (let i = 0; i < ordersArray.length; i += CHUNK_SIZE) {
+    const chunk = ordersArray.slice(i, i + CHUNK_SIZE);
+    const { data: orderData, error: orderError } = await supabase
+      .from('orders')
+      .upsert(chunk, { onConflict: 'order_id' })
+      .select()
+
+    if (orderError) {
+      console.error(`Error upserting orders chunk starting at index ${i}:`, orderError)
+      throw orderError
+    }
+    if (orderData) {
+      allResults.push(...orderData);
+    }
+    if (onProgress) {
+      const progress = Math.min(100, Math.round(((i + chunk.length) / ordersArray.length) * 100));
+      onProgress(progress);
+    }
+  }
+
+  // 2. Insert import metadata
+  const { data: importData, error: importError } = await supabase
+    .from('order_imports')
+    .insert({
+      platform,
+      filename,
+      total_rows: ordersArray.length
+    })
+    .select()
+
+  if (importError) {
+    console.error('Error logging order import:', importError)
+  }
+
+  return { orders: allResults, importLog: importData?.[0] || null }
 }
 

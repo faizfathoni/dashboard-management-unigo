@@ -76,9 +76,9 @@ export function DashboardOverview({ orders, inventoryLogs, products }) {
   const CustomTooltipSales = ({ active, payload }) => {
     if (active && payload && payload.length) {
       return (
-        <div className="bg-slate-950/90 border border-slate-800 p-2.5 rounded-lg shadow-xl text-xs">
-          <p className="font-semibold text-slate-200">{payload[0].name}</p>
-          <p className="text-violet-400 mt-1 font-semibold">
+        <div className="bg-white/95 dark:bg-slate-950/90 border border-slate-200 dark:border-slate-800 p-2.5 rounded-lg shadow-xl text-xs">
+          <p className="font-semibold text-slate-800 dark:text-slate-200">{payload[0].name}</p>
+          <p className="text-violet-600 dark:text-violet-400 mt-1 font-semibold">
             Sales: {formatIDR(payload[0].value)}
           </p>
         </div>
@@ -90,9 +90,9 @@ export function DashboardOverview({ orders, inventoryLogs, products }) {
   const CustomTooltipStatus = ({ active, payload }) => {
     if (active && payload && payload.length) {
       return (
-        <div className="bg-slate-950/90 border border-slate-800 p-2.5 rounded-lg shadow-xl text-xs">
-          <p className="font-semibold text-slate-200">{payload[0].name}</p>
-          <p className="text-violet-400 mt-1 font-semibold">
+        <div className="bg-white/95 dark:bg-slate-950/90 border border-slate-200 dark:border-slate-800 p-2.5 rounded-lg shadow-xl text-xs">
+          <p className="font-semibold text-slate-800 dark:text-slate-200">{payload[0].name}</p>
+          <p className="text-violet-600 dark:text-violet-400 mt-1 font-semibold">
             Jumlah: {payload[0].value} Pesanan
           </p>
         </div>
@@ -104,19 +104,19 @@ export function DashboardOverview({ orders, inventoryLogs, products }) {
   return (
     <div className="space-y-6">
       {/* Metrics Row */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Metric 1: Total Sales */}
         <Card className="hover:scale-[1.01] transition-transform duration-300">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-semibold text-slate-400">Total Pendapatan</span>
-            <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+            <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">Total Pendapatan</span>
+            <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
               <TrendingUp className="w-4 h-4" />
             </div>
           </div>
           <div className="mt-4">
-            <h3 className="text-2xl font-bold text-slate-100">{formatIDR(totalRevenue)}</h3>
+            <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100">{formatIDR(totalRevenue)}</h3>
             <p className="text-xs text-slate-500 mt-1 flex items-center gap-1 font-medium">
-              <span className="text-emerald-400 flex items-center"><ArrowUpRight className="w-3.5 h-3.5" /> +12%</span> vs bulan lalu
+              <span className="text-emerald-600 dark:text-emerald-400 flex items-center"><ArrowUpRight className="w-3.5 h-3.5" /> +12%</span> vs bulan lalu
             </p>
           </div>
         </Card>
@@ -124,13 +124,13 @@ export function DashboardOverview({ orders, inventoryLogs, products }) {
         {/* Metric 2: Stock Inflow */}
         <Card className="hover:scale-[1.01] transition-transform duration-300">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-semibold text-slate-400">Barang Masuk</span>
-            <div className="w-8 h-8 rounded-lg bg-violet-500/10 border border-violet-500/20 flex items-center justify-center text-violet-400">
+            <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">Barang Masuk</span>
+            <div className="w-8 h-8 rounded-lg bg-violet-500/10 border border-violet-500/20 flex items-center justify-center text-violet-650 dark:text-violet-400">
               <ArrowDownRight className="w-4 h-4 rotate-180" />
             </div>
           </div>
           <div className="mt-4">
-            <h3 className="text-2xl font-bold text-slate-100">{totalIncoming} pcs</h3>
+            <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100">{totalIncoming} pcs</h3>
             <p className="text-xs text-slate-500 mt-1 font-medium">
               Total restock produk bulan ini
             </p>
@@ -140,13 +140,13 @@ export function DashboardOverview({ orders, inventoryLogs, products }) {
         {/* Metric 3: Stock Outflow */}
         <Card className="hover:scale-[1.01] transition-transform duration-300">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-semibold text-slate-400">Barang Keluar</span>
-            <div className="w-8 h-8 rounded-lg bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400">
+            <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">Barang Keluar</span>
+            <div className="w-8 h-8 rounded-lg bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-600 dark:text-rose-400">
               <ArrowUpRight className="w-4 h-4" />
             </div>
           </div>
           <div className="mt-4">
-            <h3 className="text-2xl font-bold text-slate-100">{totalOutgoing} pcs</h3>
+            <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100">{totalOutgoing} pcs</h3>
             <p className="text-xs text-slate-500 mt-1 font-medium">
               Barang terjual & didistribusikan
             </p>
@@ -156,20 +156,20 @@ export function DashboardOverview({ orders, inventoryLogs, products }) {
         {/* Metric 4: Low Stock Warnings */}
         <Card className="hover:scale-[1.01] transition-transform duration-300">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-semibold text-slate-400">Stok Menipis</span>
-            <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
+            <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">Stok Menipis</span>
+            <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-600 dark:text-amber-400">
               <Package className="w-4 h-4" />
             </div>
           </div>
           <div className="mt-4">
-            <h3 className="text-2xl font-bold text-slate-100">{lowStockProducts} item</h3>
+            <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100">{lowStockProducts} item</h3>
             <p className="text-xs text-slate-500 mt-1 font-medium flex items-center gap-1">
               {lowStockProducts > 0 ? (
-                <span className="text-amber-400 font-semibold flex items-center gap-1">
+                <span className="text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-1">
                   <AlertCircle className="w-3.5 h-3.5" /> Perlu restock segera
                 </span>
               ) : (
-                <span className="text-emerald-400 font-semibold">Stok aman</span>
+                <span className="text-emerald-600 dark:text-emerald-400 font-semibold">Stok aman</span>
               )}
             </p>
           </div>
@@ -195,7 +195,7 @@ export function DashboardOverview({ orders, inventoryLogs, products }) {
                   axisLine={false}
                   tickFormatter={(val) => `Rp ${val / 1000}k`}
                 />
-                <Tooltip content={<CustomTooltipSales />} cursor={{ fill: "rgba(255,255,255,0.02)" }} />
+                <Tooltip content={<CustomTooltipSales />} cursor={{ fill: "rgba(139,92,246,0.05)" }} />
                 <Bar dataKey="sales" radius={[8, 8, 0, 0]}>
                   {channelChartData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.color} />
@@ -240,8 +240,8 @@ export function DashboardOverview({ orders, inventoryLogs, products }) {
               {statusChartData.map((item, idx) => (
                 <div key={idx} className="flex items-center gap-2">
                   <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }} />
-                  <span className="text-slate-400 font-medium">{item.name}</span>
-                  <span className="ml-auto font-bold text-slate-200">{item.value}</span>
+                  <span className="text-slate-500 dark:text-slate-400 font-medium">{item.name}</span>
+                  <span className="ml-auto font-bold text-slate-700 dark:text-slate-200">{item.value}</span>
                 </div>
               ))}
             </div>
@@ -259,55 +259,55 @@ export function DashboardOverview({ orders, inventoryLogs, products }) {
           </CardHeader>
           <CardContent className="space-y-4">
             {/* Shopee connection card */}
-            <div className="flex items-center justify-between p-3 rounded-lg bg-slate-900/40 border border-slate-800">
+            <div className="flex items-center justify-between p-3 rounded-lg bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800">
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-orange-500/10 border border-orange-500/25 flex items-center justify-center text-orange-400 font-bold text-sm">
+                <div className="w-8 h-8 rounded-lg bg-orange-500/10 border border-orange-500/25 flex items-center justify-center text-orange-600 dark:text-orange-400 font-bold text-sm">
                   S
                 </div>
                 <div>
-                  <p className="text-xs font-semibold text-slate-200">Shopee API</p>
-                  <p className="text-[10px] text-emerald-400 flex items-center gap-1 font-medium">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> Terhubung
+                  <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">Shopee API</p>
+                  <p className="text-[10px] text-emerald-600 dark:text-emerald-400 flex items-center gap-1 font-medium">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 dark:bg-emerald-400 animate-pulse" /> Terhubung
                   </p>
                 </div>
               </div>
-              <span className="text-[9px] bg-slate-950 px-2 py-0.5 border border-slate-800 text-slate-400 rounded-md">
+              <span className="text-[9px] bg-slate-200/50 dark:bg-slate-950 px-2 py-0.5 border border-slate-300 dark:border-slate-800 text-slate-600 dark:text-slate-400 rounded-md font-mono">
                 100% OK
               </span>
             </div>
 
             {/* TikTok Shop connection card */}
-            <div className="flex items-center justify-between p-3 rounded-lg bg-slate-900/40 border border-slate-800">
+            <div className="flex items-center justify-between p-3 rounded-lg bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800">
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-pink-500/10 border border-pink-500/25 flex items-center justify-center text-pink-400 font-bold text-sm">
+                <div className="w-8 h-8 rounded-lg bg-pink-500/10 border border-pink-500/25 flex items-center justify-center text-pink-600 dark:text-pink-400 font-bold text-sm">
                   TT
                 </div>
                 <div>
-                  <p className="text-xs font-semibold text-slate-200">TikTok Shop API</p>
-                  <p className="text-[10px] text-emerald-400 flex items-center gap-1 font-medium">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> Terhubung
+                  <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">TikTok Shop API</p>
+                  <p className="text-[10px] text-emerald-600 dark:text-emerald-400 flex items-center gap-1 font-medium">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 dark:bg-emerald-400 animate-pulse" /> Terhubung
                   </p>
                 </div>
               </div>
-              <span className="text-[9px] bg-slate-950 px-2 py-0.5 border border-slate-800 text-slate-400 rounded-md">
+              <span className="text-[9px] bg-slate-200/50 dark:bg-slate-950 px-2 py-0.5 border border-slate-300 dark:border-slate-800 text-slate-600 dark:text-slate-400 rounded-md font-mono">
                 100% OK
               </span>
             </div>
 
             {/* Offline Sales connection card */}
-            <div className="flex items-center justify-between p-3 rounded-lg bg-slate-900/40 border border-slate-800">
+            <div className="flex items-center justify-between p-3 rounded-lg bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800">
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-sky-500/10 border border-sky-500/25 flex items-center justify-center text-sky-400 font-bold text-sm">
+                <div className="w-8 h-8 rounded-lg bg-sky-500/10 border border-sky-500/25 flex items-center justify-center text-sky-600 dark:text-sky-400 font-bold text-sm">
                   OF
                 </div>
                 <div>
-                  <p className="text-xs font-semibold text-slate-200">Offline Store Cashier</p>
-                  <p className="text-[10px] text-emerald-400 flex items-center gap-1 font-medium">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> Sinkron Lokal
+                  <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">Offline Store Cashier</p>
+                  <p className="text-[10px] text-emerald-600 dark:text-emerald-400 flex items-center gap-1 font-medium">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 dark:bg-emerald-400 animate-pulse" /> Sinkron Lokal
                   </p>
                 </div>
               </div>
-              <span className="text-[9px] bg-slate-950 px-2 py-0.5 border border-slate-800 text-slate-400 rounded-md">
+              <span className="text-[9px] bg-slate-200/50 dark:bg-slate-950 px-2 py-0.5 border border-slate-300 dark:border-slate-800 text-slate-600 dark:text-slate-400 rounded-md font-mono">
                 Standby
               </span>
             </div>
@@ -326,13 +326,13 @@ export function DashboardOverview({ orders, inventoryLogs, products }) {
           <CardContent className="space-y-4 max-h-56 overflow-y-auto pr-1">
             {/* Merge logs & orders into a timeline */}
             {orders.slice(0, 3).map((order) => (
-              <div key={order.id} className="flex items-start gap-3 text-xs border-b border-slate-850 pb-2">
+              <div key={order.id} className="flex items-start gap-3 text-xs border-b border-slate-200 dark:border-slate-800/60 pb-2">
                 <div className="w-2 h-2 rounded-full mt-1.5 shrink-0 bg-violet-500" />
                 <div className="flex-1">
-                  <p className="text-slate-300">
-                    Pesanan baru dari <span className="font-semibold text-slate-200">{order.customer}</span> senilai <span className="font-mono text-violet-400 font-bold">{formatIDR(order.total)}</span> masuk melalui <span className="font-semibold">{order.channel}</span>.
+                  <p className="text-slate-600 dark:text-slate-300">
+                    Pesanan baru dari <span className="font-semibold text-slate-850 dark:text-slate-200">{order.customer}</span> senilai <span className="font-mono text-violet-600 dark:text-violet-400 font-bold">{formatIDR(order.total)}</span> masuk melalui <span className="font-semibold">{order.channel}</span>.
                   </p>
-                  <p className="text-[10px] text-slate-500 mt-0.5">
+                  <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
                     {new Date(order.date).toLocaleString("id-ID")}
                   </p>
                 </div>
@@ -341,17 +341,17 @@ export function DashboardOverview({ orders, inventoryLogs, products }) {
             ))}
 
             {inventoryLogs.slice(0, 3).map((log) => (
-              <div key={log.id} className="flex items-start gap-3 text-xs border-b border-slate-850 pb-2">
+              <div key={log.id} className="flex items-start gap-3 text-xs border-b border-slate-200 dark:border-slate-800/60 pb-2">
                 <div
                   className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${
                     log.type === "masuk" ? "bg-emerald-500" : "bg-rose-500"
                   }`}
                 />
                 <div className="flex-1">
-                  <p className="text-slate-300">
-                    Stok <span className="font-semibold">{log.type === "masuk" ? "bertambah" : "berkurang"}</span> untuk <span className="font-semibold text-slate-200">{log.productName}</span> sebanyak <span className="font-semibold font-mono">{log.qty} pcs</span>.
+                  <p className="text-slate-600 dark:text-slate-300">
+                    Stok <span className="font-semibold">{log.type === "masuk" ? "bertambah" : "berkurang"}</span> untuk <span className="font-semibold text-slate-850 dark:text-slate-200">{log.productName}</span> sebanyak <span className="font-semibold font-mono">{log.qty} pcs</span>.
                   </p>
-                  <p className="text-[10px] text-slate-500 mt-0.5">
+                  <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
                     {new Date(log.date).toLocaleString("id-ID")}
                   </p>
                 </div>
