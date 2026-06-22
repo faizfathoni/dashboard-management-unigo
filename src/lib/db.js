@@ -415,52 +415,240 @@ export function mapInventoryItems(rawProducts, stockInLogs, orders = []) {
 }
 
 /**
- * Fetch all orders from Supabase orders table.
+ * Helper to parse dates from CSV strings.
  */
-export async function fetchOrders() {
-  const { data, error } = await supabase
-    .from('orders')
-    .select('*')
-    .order('created_time', { ascending: false })
-
-  if (error) {
-    console.error('Error fetching orders:', error)
-    throw error
+function parseCSVDate(dateStr) {
+  if (!dateStr) return null;
+  const cleaned = String(dateStr).trim();
+  if (!cleaned) return null;
+  const dmyRegex = /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})\s+(\d{1,2}):(\d{1,2}):(\d{1,2})$/;
+  const match = cleaned.match(dmyRegex);
+  if (match) {
+    const [_, day, month, year, hour, minute, second] = match;
+    return new Date(parseInt(year), parseInt(month) - 1, parseInt(day), parseInt(hour), parseInt(minute), parseInt(second)).toISOString();
   }
-  return data || []
+  const parsed = new Date(cleaned);
+  return !isNaN(parsed.getTime()) ? parsed.toISOString() : null;
 }
 
 /**
- * Import multiple orders and log the import.
+ * Helper to safely extract keys from jsonb objects case-insensitively.
+ */
+function getJsonVal(rawData, keyName) {
+  if (!rawData) return null;
+  const actualKey = Object.keys(rawData).find(k => k.toLowerCase() === keyName.toLowerCase());
+  const val = actualKey ? rawData[actualKey] : null;
+  return val !== undefined && val !== null ? String(val).trim() : null;
+}
+
+/**
+ * Helper to map a unified order row to orders_shopee columns.
+ */
+function mapShopeeRow(order, importId) {
+  const getVal = (key) => {
+    if (!order.raw_data) return null;
+    const actualKey = Object.keys(order.raw_data).find(k => k.toLowerCase() === key.toLowerCase());
+    return actualKey !== undefined ? order.raw_data[actualKey] : null;
+  };
+
+  const getFloat = (key) => {
+    const val = getVal(key);
+    if (val === null || val === undefined) return null;
+    const parsed = parseFloat(String(val).replace(/[^0-9\.\-]/g, ''));
+    return isNaN(parsed) ? null : parsed;
+  };
+
+  const getInt = (key) => {
+    const val = getVal(key);
+    if (val === null || val === undefined) return null;
+    const parsed = parseInt(String(val).replace(/[^0-9\-]/g, ''), 10);
+    return isNaN(parsed) ? null : parsed;
+  };
+
+  return {
+    import_id: importId,
+    order_id: order.order_id,
+    order_status: order.status,
+    order_substatus: getVal("Order Substatus") || getVal("order_substatus"),
+    cancelation_return_type: getVal("Cancelation/Return Type") || getVal("cancelation_return_type"),
+    normal_or_pre_order: getVal("Normal or Pre-order") || getVal("normal_or_pre_order"),
+    sku_id: getVal("SKU ID") || getVal("sku_id"),
+    seller_sku: getVal("Seller SKU") || getVal("seller_sku"),
+    product_name: order.product_name,
+    variation: order.variation,
+    quantity: order.quantity,
+    sku_quantity_of_return: getInt("Sku Quantity of return") || getInt("sku_quantity_of_return"),
+    sku_unit_original_price: getFloat("SKU Unit Original Price") || getFloat("sku_unit_original_price"),
+    sku_subtotal_before_discount: getFloat("SKU Subtotal Before Discount") || getFloat("sku_subtotal_before_discount"),
+    sku_platform_discount: getFloat("SKU Platform Discount") || getFloat("sku_platform_discount"),
+    sku_seller_discount: getFloat("SKU Seller Discount") || getFloat("sku_seller_discount"),
+    sku_subtotal_after_discount: order.price,
+    shipping_fee_after_discount: order.shipping_fee,
+    original_shipping_fee: getFloat("Original Shipping Fee") || getFloat("original_shipping_fee"),
+    shipping_fee_seller_discount: getFloat("Shipping Fee Seller Discount") || getFloat("shipping_fee_seller_discount"),
+    shipping_fee_platform_discount: getFloat("Shipping Fee Platform Discount") || getFloat("shipping_fee_platform_discount"),
+    distance_shipping_fee: getFloat("Distance Shipping Fee") || getFloat("distance_shipping_fee"),
+    distance_fee: getFloat("Distance Fee") || getFloat("distance_fee"),
+    order_refund_amount: getFloat("Order Refund Amount") || getFloat("order_refund_amount"),
+    payment_platform_discount: getFloat("Payment platform discount") || getFloat("payment_platform_discount"),
+    buyer_service_fee: getFloat("Buyer Service Fee") || getFloat("buyer_service_fee"),
+    handling_fee: getFloat("Handling Fee") || getFloat("handling_fee"),
+    shipping_insurance: getFloat("Shipping Insurance") || getFloat("shipping_insurance"),
+    item_insurance: getFloat("Item Insurance") || getFloat("item_insurance"),
+    order_amount: order.order_amount,
+    created_time: order.created_time,
+    paid_time: parseCSVDate(getVal("Paid Time") || getVal("paid_time")),
+    rts_time: parseCSVDate(getVal("RTS Time") || getVal("rts_time")),
+    shipped_time: parseCSVDate(getVal("Shipped Time") || getVal("shipped_time")),
+    delivered_time: parseCSVDate(getVal("Delivered Time") || getVal("delivered_time")),
+    cancelled_time: parseCSVDate(getVal("Cancelled Time") || getVal("cancelled_time")),
+    cancel_by: getVal("Cancel By") || getVal("cancel_by"),
+    cancel_reason: getVal("Cancel Reason") || getVal("cancel_reason"),
+    fulfillment_type: getVal("Fulfillment Type") || getVal("fulfillment_type"),
+    warehouse_name: getVal("Warehouse Name") || getVal("warehouse_name"),
+    tracking_id: getVal("Tracking ID") || getVal("tracking_id"),
+    delivery_option: getVal("Delivery Option") || getVal("delivery_option"),
+    shipping_provider_name: getVal("Shipping Provider Name") || getVal("shipping_provider_name"),
+    buyer_message: getVal("Buyer Message") || getVal("buyer_message"),
+    buyer_username: order.buyer_username,
+    recipient: order.recipient_name,
+    phone_number: getVal("Phone #") || getVal("phone_number") || getVal("Phone Number"),
+    zipcode: getVal("Zipcode") || getVal("zipcode"),
+    country: getVal("Country") || getVal("country"),
+    province: order.province,
+    regency_and_city: order.city,
+    districts: getVal("Districts") || getVal("districts"),
+    villages: getVal("Villages") || getVal("villages"),
+    detail_address: getVal("Detail Address") || getVal("detail_address"),
+    additional_address_information: getVal("Additional address information") || getVal("additional_address_information"),
+    payment_method: order.payment_method,
+    weight_kg: getFloat("Weight(kg)") || getFloat("weight_kg"),
+    product_category: getVal("Product Category") || getVal("product_category"),
+    package_id: getVal("Package ID") || getVal("package_id"),
+    purchase_channel: getVal("Purchase Channel") || getVal("purchase_channel"),
+    seller_note: getVal("Seller Note") || getVal("seller_note"),
+    checked_status: getVal("Checked Status") || getVal("checked_status"),
+    checked_marked_by: getVal("Checked Marked by") || getVal("checked_marked_by"),
+    tokopedia_invoice_number: getVal("Tokopedia Invoice Number") || getVal("tokopedia_invoice_number"),
+    raw_data: order.raw_data
+  };
+}
+
+/**
+ * Fetch all orders from public.orders_tiktok_tokopedia and public.orders_shopee,
+ * mapping and returning them in a unified order format.
+ */
+export async function fetchOrders() {
+  const { data: tiktokData, error: tiktokError } = await supabase
+    .from('orders_tiktok_tokopedia')
+    .select('*');
+
+  if (tiktokError) {
+    console.error('Error fetching TikTok/Tokopedia orders:', tiktokError);
+    throw tiktokError;
+  }
+
+  const { data: shopeeData, error: shopeeError } = await supabase
+    .from('orders_shopee')
+    .select('*');
+
+  if (shopeeError) {
+    console.error('Error fetching Shopee orders:', shopeeError);
+    throw shopeeError;
+  }
+
+  const mappedTiktok = (tiktokData || []).map(row => {
+    let platform = "tiktok";
+    const channelVal = getJsonVal(row.raw_data, "Purchase Channel") || getJsonVal(row.raw_data, "purchase_channel") || "";
+    if (channelVal.toLowerCase().includes("tokopedia")) {
+      platform = "tokopedia";
+    }
+
+    let status = getJsonVal(row.raw_data, "Order Status") || getJsonVal(row.raw_data, "status");
+    const cancelReturnType = getJsonVal(row.raw_data, "Cancelation/Return Type") || getJsonVal(row.raw_data, "cancelation_return_type");
+    if (cancelReturnType && cancelReturnType.trim().toLowerCase() === "return/refund") {
+      status = "Return/Refund";
+    }
+
+    const priceStr = getJsonVal(row.raw_data, "SKU Subtotal After Discount") || getJsonVal(row.raw_data, "price") || getJsonVal(row.raw_data, "SKU Unit Original Price") || "0";
+    const price = parseFloat(priceStr.replace(/[^0-9\.\-]/g, '')) || 0;
+
+    const shipFeeStr = getJsonVal(row.raw_data, "Shipping Fee After Discount") || getJsonVal(row.raw_data, "shipping_fee") || "0";
+    const shippingFee = parseFloat(shipFeeStr.replace(/[^0-9\.\-]/g, '')) || 0;
+
+    const amountStr = getJsonVal(row.raw_data, "Order Amount") || getJsonVal(row.raw_data, "total") || "0";
+    const orderAmount = parseFloat(amountStr.replace(/[^0-9\.\-]/g, '')) || price + shippingFee;
+
+    const createdTimeStr = getJsonVal(row.raw_data, "Created Time") || getJsonVal(row.raw_data, "created_time") || getJsonVal(row.raw_data, "date");
+    const createdTime = parseCSVDate(createdTimeStr) || row.created_at;
+
+    return {
+      id: row.id,
+      import_id: row.import_id,
+      platform,
+      order_id: row.order_id,
+      status,
+      product_name: getJsonVal(row.raw_data, "Product Name") || getJsonVal(row.raw_data, "product_name") || "",
+      variation: getJsonVal(row.raw_data, "Variation") || getJsonVal(row.raw_data, "varian") || "",
+      quantity: parseInt(getJsonVal(row.raw_data, "Quantity") || getJsonVal(row.raw_data, "qty") || "1", 10),
+      price,
+      shipping_fee: shippingFee,
+      order_amount: orderAmount,
+      buyer_username: getJsonVal(row.raw_data, "Buyer Username") || getJsonVal(row.raw_data, "buyer_username"),
+      recipient_name: getJsonVal(row.raw_data, "Recipient") || getJsonVal(row.raw_data, "customer") || getJsonVal(row.raw_data, "recipient_name"),
+      province: getJsonVal(row.raw_data, "Province") || getJsonVal(row.raw_data, "provinsi"),
+      city: getJsonVal(row.raw_data, "Regency and City") || getJsonVal(row.raw_data, "city") || getJsonVal(row.raw_data, "kota"),
+      payment_method: getJsonVal(row.raw_data, "Payment Method") || getJsonVal(row.raw_data, "payment_method"),
+      created_time: createdTime,
+      raw_data: row.raw_data
+    };
+  });
+
+  const mappedShopee = (shopeeData || []).map(row => {
+    let status = row.order_status;
+    if (row.cancelation_return_type && row.cancelation_return_type.trim().toLowerCase() === "return/refund") {
+      status = "Return/Refund";
+    }
+
+    return {
+      id: row.id,
+      import_id: row.import_id,
+      platform: "shopee",
+      order_id: row.order_id,
+      status,
+      product_name: row.product_name || "",
+      variation: row.variation || "",
+      quantity: row.quantity || 1,
+      price: Number(row.sku_subtotal_after_discount) || 0,
+      shipping_fee: Number(row.shipping_fee_after_discount) || 0,
+      order_amount: Number(row.order_amount) || 0,
+      buyer_username: row.buyer_username,
+      recipient_name: row.recipient,
+      province: row.province,
+      city: row.regency_and_city,
+      payment_method: row.payment_method,
+      created_time: row.created_time,
+      raw_data: row.raw_data
+    };
+  });
+
+  const combined = [...mappedTiktok, ...mappedShopee].sort((a, b) => {
+    const dateA = a.created_time ? new Date(a.created_time) : new Date(0);
+    const dateB = b.created_time ? new Date(b.created_time) : new Date(0);
+    return dateB - dateA;
+  });
+
+  return combined;
+}
+
+/**
+ * Import multiple orders and log the import in order_imports first,
+ * then upserting into the correct table.
  */
 export async function importOrders(platform, filename, ordersArray, onProgress) {
   if (ordersArray.length === 0) return { orders: [], importLog: null }
 
-  const CHUNK_SIZE = 200;
-  const allResults = [];
-
-  // Upsert in chunks to avoid database statement timeouts
-  for (let i = 0; i < ordersArray.length; i += CHUNK_SIZE) {
-    const chunk = ordersArray.slice(i, i + CHUNK_SIZE);
-    const { data: orderData, error: orderError } = await supabase
-      .from('orders')
-      .upsert(chunk, { onConflict: 'order_id' })
-      .select()
-
-    if (orderError) {
-      console.error(`Error upserting orders chunk starting at index ${i}:`, orderError)
-      throw orderError
-    }
-    if (orderData) {
-      allResults.push(...orderData);
-    }
-    if (onProgress) {
-      const progress = Math.min(100, Math.round(((i + chunk.length) / ordersArray.length) * 100));
-      onProgress(progress);
-    }
-  }
-
-  // 2. Insert import metadata
+  // 1. Insert import metadata first to get the import_id
   const { data: importData, error: importError } = await supabase
     .from('order_imports')
     .insert({
@@ -468,12 +656,60 @@ export async function importOrders(platform, filename, ordersArray, onProgress) 
       filename,
       total_rows: ordersArray.length
     })
-    .select()
+    .select();
 
   if (importError) {
-    console.error('Error logging order import:', importError)
+    console.error('Error logging order import:', importError);
+    throw importError;
   }
 
-  return { orders: allResults, importLog: importData?.[0] || null }
+  const importLog = importData?.[0] || null;
+  const importId = importLog ? importLog.id : null;
+
+  // 2. Prepare database rows depending on the platform
+  let dbRows = [];
+  let tableName = '';
+
+  const platLower = (platform || '').toLowerCase();
+  if (platLower === 'shopee') {
+    dbRows = ordersArray.map(order => mapShopeeRow(order, importId));
+    tableName = 'orders_shopee';
+  } else {
+    dbRows = ordersArray.map(order => ({
+      import_id: importId,
+      order_id: order.order_id,
+      raw_data: {
+        ...order.raw_data,
+        "Order Status": order.status // keep overridden status
+      }
+    }));
+    tableName = 'orders_tiktok_tokopedia';
+  }
+
+  // 3. Upsert in chunks to avoid database statement timeouts
+  const CHUNK_SIZE = 200;
+  const allResults = [];
+
+  for (let i = 0; i < dbRows.length; i += CHUNK_SIZE) {
+    const chunk = dbRows.slice(i, i + CHUNK_SIZE);
+    const { data: orderData, error: orderError } = await supabase
+      .from(tableName)
+      .upsert(chunk, { onConflict: 'order_id' })
+      .select();
+
+    if (orderError) {
+      console.error(`Error upserting orders chunk into ${tableName} starting at index ${i}:`, orderError);
+      throw orderError;
+    }
+    if (orderData) {
+      allResults.push(...orderData);
+    }
+    if (onProgress) {
+      const progress = Math.min(100, Math.round(((i + chunk.length) / dbRows.length) * 100));
+      onProgress(progress);
+    }
+  }
+
+  return { orders: allResults, importLog };
 }
 

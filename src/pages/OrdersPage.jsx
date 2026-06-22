@@ -150,7 +150,12 @@ export function OrdersPage({ orders, onRefreshData }) {
       const mappedOrders = dataRows.map((row) => {
         const orderIdRaw = getVal(row, "Order ID") || getVal(row, "order_id");
         const orderId = orderIdRaw ? orderIdRaw.trim() : "";
-        const orderStatus = getVal(row, "Order Status") || getVal(row, "status");
+        let orderStatus = getVal(row, "Order Status") || getVal(row, "status");
+        const cancelReturnType = getVal(row, "Cancelation/Return Type") || getVal(row, "cancelation_return_type");
+        if (cancelReturnType && cancelReturnType.trim().toLowerCase() === "return/refund") { 
+          orderStatus = "Return/Refund";
+        }
+        
         const productName = getVal(row, "Product Name") || getVal(row, "product_name");
         const variation = getVal(row, "Variation") || getVal(row, "varian");
         const quantity = parseInt(getVal(row, "Quantity") || getVal(row, "qty") || "1", 10);
