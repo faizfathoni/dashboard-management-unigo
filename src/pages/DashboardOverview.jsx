@@ -14,7 +14,18 @@ import {
   Pie,
 } from "recharts";
 
-export function DashboardOverview({ orders, inventoryLogs, products }) {
+const Skeleton = ({ className }) => (
+  <div className={`animate-pulse bg-slate-200/80 dark:bg-slate-800/80 rounded ${className}`} />
+);
+
+export function DashboardOverview({
+  orders = [],
+  inventoryLogs = [],
+  products = [],
+  productsLoading = false,
+  stockInLoading = false,
+  ordersLoading = false
+}) {
   // 1. Calculate dynamic statistics
   const successOrders = orders.filter((o) => o.status === "pengiriman sukses");
   const totalRevenue = successOrders.reduce((sum, o) => sum + o.total, 0);
@@ -114,10 +125,19 @@ export function DashboardOverview({ orders, inventoryLogs, products }) {
             </div>
           </div>
           <div className="mt-4">
-            <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100">{formatIDR(totalRevenue)}</h3>
-            <p className="text-xs text-slate-500 mt-1 flex items-center gap-1 font-medium">
-              <span className="text-emerald-600 dark:text-emerald-400 flex items-center"><ArrowUpRight className="w-3.5 h-3.5" /> +12%</span> vs bulan lalu
-            </p>
+            {ordersLoading ? (
+              <div className="space-y-2">
+                <Skeleton className="h-8 w-32" />
+                <Skeleton className="h-4 w-20" />
+              </div>
+            ) : (
+              <>
+                <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100">{formatIDR(totalRevenue)}</h3>
+                <p className="text-xs text-slate-500 mt-1 flex items-center gap-1 font-medium">
+                  <span className="text-emerald-600 dark:text-emerald-400 flex items-center"><ArrowUpRight className="w-3.5 h-3.5" /> +12%</span> vs bulan lalu
+                </p>
+              </>
+            )}
           </div>
         </Card>
 
@@ -130,10 +150,19 @@ export function DashboardOverview({ orders, inventoryLogs, products }) {
             </div>
           </div>
           <div className="mt-4">
-            <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100">{totalIncoming} pcs</h3>
-            <p className="text-xs text-slate-500 mt-1 font-medium">
-              Total restock produk bulan ini
-            </p>
+            {stockInLoading ? (
+              <div className="space-y-2">
+                <Skeleton className="h-8 w-20" />
+                <Skeleton className="h-4 w-28" />
+              </div>
+            ) : (
+              <>
+                <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100">{totalIncoming} pcs</h3>
+                <p className="text-xs text-slate-500 mt-1 font-medium">
+                  Total restock produk bulan ini
+                </p>
+              </>
+            )}
           </div>
         </Card>
 
@@ -146,10 +175,19 @@ export function DashboardOverview({ orders, inventoryLogs, products }) {
             </div>
           </div>
           <div className="mt-4">
-            <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100">{totalOutgoing} pcs</h3>
-            <p className="text-xs text-slate-500 mt-1 font-medium">
-              Barang terjual & didistribusikan
-            </p>
+            {ordersLoading || stockInLoading ? (
+              <div className="space-y-2">
+                <Skeleton className="h-8 w-20" />
+                <Skeleton className="h-4 w-28" />
+              </div>
+            ) : (
+              <>
+                <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100">{totalOutgoing} pcs</h3>
+                <p className="text-xs text-slate-500 mt-1 font-medium">
+                  Barang terjual & didistribusikan
+                </p>
+              </>
+            )}
           </div>
         </Card>
 
@@ -162,16 +200,25 @@ export function DashboardOverview({ orders, inventoryLogs, products }) {
             </div>
           </div>
           <div className="mt-4">
-            <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100">{lowStockProducts} item</h3>
-            <p className="text-xs text-slate-500 mt-1 font-medium flex items-center gap-1">
-              {lowStockProducts > 0 ? (
-                <span className="text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-1">
-                  <AlertCircle className="w-3.5 h-3.5" /> Perlu restock segera
-                </span>
-              ) : (
-                <span className="text-emerald-600 dark:text-emerald-400 font-semibold">Stok aman</span>
-              )}
-            </p>
+            {productsLoading ? (
+              <div className="space-y-2">
+                <Skeleton className="h-8 w-20" />
+                <Skeleton className="h-4 w-28" />
+              </div>
+            ) : (
+              <>
+                <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100">{lowStockProducts} item</h3>
+                <p className="text-xs text-slate-500 mt-1 font-medium flex items-center gap-1">
+                  {lowStockProducts > 0 ? (
+                    <span className="text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-1">
+                      <AlertCircle className="w-3.5 h-3.5" /> Perlu restock segera
+                    </span>
+                  ) : (
+                    <span className="text-emerald-600 dark:text-emerald-400 font-semibold">Stok aman</span>
+                  )}
+                </p>
+              </>
+            )}
           </div>
         </Card>
       </div>
@@ -185,24 +232,32 @@ export function DashboardOverview({ orders, inventoryLogs, products }) {
             <CardDescription>Pendapatan berhasil dibukukan dari pesanan yang sukses.</CardDescription>
           </CardHeader>
           <CardContent className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={channelChartData} margin={{ top: 10, right: 10, left: 10, bottom: 5 }}>
-                <XAxis dataKey="name" stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} />
-                <YAxis
-                  stroke="#64748b"
-                  fontSize={10}
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={(val) => `Rp ${val / 1000}k`}
-                />
-                <Tooltip content={<CustomTooltipSales />} cursor={{ fill: "rgba(139,92,246,0.05)" }} />
-                <Bar dataKey="sales" radius={[8, 8, 0, 0]}>
-                  {channelChartData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+            {ordersLoading ? (
+              <div className="w-full h-full flex items-end gap-6 px-4 pb-2 pt-4">
+                <Skeleton className="h-1/3 flex-1 rounded-t-lg" />
+                <Skeleton className="h-2/3 flex-1 rounded-t-lg" />
+                <Skeleton className="h-1/2 flex-1 rounded-t-lg" />
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={channelChartData} margin={{ top: 10, right: 10, left: 10, bottom: 5 }}>
+                  <XAxis dataKey="name" stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} />
+                  <YAxis
+                    stroke="#64748b"
+                    fontSize={10}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(val) => `Rp ${val / 1000}k`}
+                  />
+                  <Tooltip content={<CustomTooltipSales />} cursor={{ fill: "rgba(139,92,246,0.05)" }} />
+                  <Bar dataKey="sales" radius={[8, 8, 0, 0]}>
+                    {channelChartData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </CardContent>
         </Card>
 
@@ -212,39 +267,53 @@ export function DashboardOverview({ orders, inventoryLogs, products }) {
             <CardTitle>Status Pesanan</CardTitle>
             <CardDescription>Rincian status pengiriman marketplace & offline.</CardDescription>
           </CardHeader>
-          <CardContent className="flex flex-col items-center justify-center">
-            {/* Pie Chart / Donut Chart */}
-            <div className="w-full h-44 flex items-center justify-center">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Tooltip content={<CustomTooltipStatus />} />
-                  <Pie
-                    data={statusChartData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={50}
-                    outerRadius={70}
-                    paddingAngle={4}
-                    dataKey="value"
-                  >
-                    {statusChartData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-
-            {/* Labels and Stats */}
-            <div className="grid grid-cols-2 gap-x-6 gap-y-2 mt-4 w-full text-xs">
-              {statusChartData.map((item, idx) => (
-                <div key={idx} className="flex items-center gap-2">
-                  <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }} />
-                  <span className="text-slate-500 dark:text-slate-400 font-medium">{item.name}</span>
-                  <span className="ml-auto font-bold text-slate-700 dark:text-slate-200">{item.value}</span>
+          <CardContent className="flex flex-col items-center justify-center min-h-[224px]">
+            {ordersLoading ? (
+              <div className="flex flex-col items-center gap-4 w-full">
+                <Skeleton className="w-28 h-28 rounded-full" />
+                <div className="grid grid-cols-2 gap-4 w-full px-2">
+                  <Skeleton className="h-4 w-full" />
+                  <Skeleton className="h-4 w-full" />
+                  <Skeleton className="h-4 w-full" />
+                  <Skeleton className="h-4 w-full" />
                 </div>
-              ))}
-            </div>
+              </div>
+            ) : (
+              <>
+                {/* Pie Chart / Donut Chart */}
+                <div className="w-full h-44 flex items-center justify-center">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Tooltip content={<CustomTooltipStatus />} />
+                      <Pie
+                        data={statusChartData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={50}
+                        outerRadius={70}
+                        paddingAngle={4}
+                        dataKey="value"
+                      >
+                        {statusChartData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+
+                {/* Labels and Stats */}
+                <div className="grid grid-cols-2 gap-x-6 gap-y-2 mt-4 w-full text-xs">
+                  {statusChartData.map((item, idx) => (
+                    <div key={idx} className="flex items-center gap-2">
+                      <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+                      <span className="text-slate-500 dark:text-slate-400 font-medium">{item.name}</span>
+                      <span className="ml-auto font-bold text-slate-700 dark:text-slate-200">{item.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -324,42 +393,52 @@ export function DashboardOverview({ orders, inventoryLogs, products }) {
             <Activity className="w-4 h-4 text-slate-500" />
           </CardHeader>
           <CardContent className="space-y-4 max-h-56 overflow-y-auto pr-1">
-            {/* Merge logs & orders into a timeline */}
-            {orders.slice(0, 3).map((order) => (
-              <div key={order.id} className="flex items-start gap-3 text-xs border-b border-slate-200 dark:border-slate-800/60 pb-2">
-                <div className="w-2 h-2 rounded-full mt-1.5 shrink-0 bg-violet-500" />
-                <div className="flex-1">
-                  <p className="text-slate-600 dark:text-slate-300">
-                    Pesanan baru dari <span className="font-semibold text-slate-850 dark:text-slate-200">{order.customer}</span> senilai <span className="font-mono text-violet-600 dark:text-violet-400 font-bold">{formatIDR(order.total)}</span> masuk melalui <span className="font-semibold">{order.channel}</span>.
-                  </p>
-                  <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
-                    {new Date(order.date).toLocaleString("id-ID")}
-                  </p>
-                </div>
-                <Badge variant={order.status}>{order.status}</Badge>
+            {ordersLoading || stockInLoading ? (
+              <div className="space-y-3">
+                <Skeleton className="h-12 w-full" />
+                <Skeleton className="h-12 w-full" />
+                <Skeleton className="h-12 w-full" />
               </div>
-            ))}
+            ) : (
+              <>
+                {/* Merge logs & orders into a timeline */}
+                {orders.slice(0, 3).map((order) => (
+                  <div key={order.id} className="flex items-start gap-3 text-xs border-b border-slate-200 dark:border-slate-800/60 pb-2">
+                    <div className="w-2 h-2 rounded-full mt-1.5 shrink-0 bg-violet-500" />
+                    <div className="flex-1">
+                      <p className="text-slate-600 dark:text-slate-300">
+                        Pesanan baru dari <span className="font-semibold text-slate-850 dark:text-slate-200">{order.customer}</span> senilai <span className="font-mono text-violet-650 dark:text-violet-400 font-bold">{formatIDR(order.total)}</span> masuk melalui <span className="font-semibold">{order.channel}</span>.
+                      </p>
+                      <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
+                        {new Date(order.date).toLocaleString("id-ID")}
+                      </p>
+                    </div>
+                    <Badge variant={order.status}>{order.status}</Badge>
+                  </div>
+                ))}
 
-            {inventoryLogs.slice(0, 3).map((log) => (
-              <div key={log.id} className="flex items-start gap-3 text-xs border-b border-slate-200 dark:border-slate-800/60 pb-2">
-                <div
-                  className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${
-                    log.type === "masuk" ? "bg-emerald-500" : "bg-rose-500"
-                  }`}
-                />
-                <div className="flex-1">
-                  <p className="text-slate-600 dark:text-slate-300">
-                    Stok <span className="font-semibold">{log.type === "masuk" ? "bertambah" : "berkurang"}</span> untuk <span className="font-semibold text-slate-850 dark:text-slate-200">{log.productName}</span> sebanyak <span className="font-semibold font-mono">{log.qty} pcs</span>.
-                  </p>
-                  <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
-                    {new Date(log.date).toLocaleString("id-ID")}
-                  </p>
-                </div>
-                <Badge variant={log.type === "masuk" ? "success" : "danger"}>
-                  {log.type === "masuk" ? "In" : "Out"}
-                </Badge>
-              </div>
-            ))}
+                {inventoryLogs.slice(0, 3).map((log) => (
+                  <div key={log.id} className="flex items-start gap-3 text-xs border-b border-slate-200 dark:border-slate-800/60 pb-2">
+                    <div
+                      className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${
+                        log.type === "masuk" ? "bg-emerald-500" : "bg-rose-500"
+                      }`}
+                    />
+                    <div className="flex-1">
+                      <p className="text-slate-600 dark:text-slate-300">
+                        Stok <span className="font-semibold">{log.type === "masuk" ? "bertambah" : "berkurang"}</span> untuk <span className="font-semibold text-slate-850 dark:text-slate-200">{log.productName}</span> sebanyak <span className="font-semibold font-mono">{log.qty} pcs</span>.
+                      </p>
+                      <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
+                        {new Date(log.date).toLocaleString("id-ID")}
+                      </p>
+                    </div>
+                    <Badge variant={log.type === "masuk" ? "success" : "danger"}>
+                      {log.type === "masuk" ? "In" : "Out"}
+                    </Badge>
+                  </div>
+                ))}
+              </>
+            )}
           </CardContent>
         </Card>
       </div>

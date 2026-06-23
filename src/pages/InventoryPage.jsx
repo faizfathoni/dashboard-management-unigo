@@ -33,7 +33,19 @@ import {
   deleteProduct 
 } from "../lib/db";
 
-export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshData }) {
+const Skeleton = ({ className }) => (
+  <div className={`animate-pulse bg-slate-200/80 dark:bg-slate-800/80 rounded ${className}`} />
+);
+
+export function InventoryPage({
+  products,
+  rawProducts,
+  inventoryLogs,
+  onRefreshData,
+  productsLoading = false,
+  stockInLoading = false,
+  ordersLoading = false
+}) {
   // Tabs: 'transactions' or 'products'
   const [activeSubTab, setActiveSubTab] = useState("transactions");
   const [searchQuery, setSearchQuery] = useState("");
@@ -626,7 +638,11 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
                 </div>
               </div>
               <div className="mt-4">
-                <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100">{products.length} SKU</h3>
+                {productsLoading ? (
+                  <Skeleton className="h-8 w-24" />
+                ) : (
+                  <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100">{products.length} SKU</h3>
+                )}
                 <p className="text-xs text-slate-500 mt-1 font-medium">Model barang di toko</p>
               </div>
             </Card>
@@ -646,9 +662,13 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
               </div>
               <div className="mt-4 flex flex-col gap-2">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100">
-                    {totalStockInputtedOnDate} pcs
-                  </h3>
+                  {stockInLoading ? (
+                    <Skeleton className="h-8 w-24" />
+                  ) : (
+                    <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100">
+                      {totalStockInputtedOnDate} pcs
+                    </h3>
+                  )}
                   <div className="relative">
                     <input
                       ref={dateInputRef}
@@ -666,6 +686,7 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
                     />
                     <button
                       type="button"
+                      disabled={stockInLoading}
                       onClick={() => {
                         if (dateInputRef.current) {
                           if (typeof dateInputRef.current.showPicker === "function") {
@@ -675,7 +696,7 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
                           }
                         }
                       }}
-                      className="p-1.5 px-2.5 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-850 text-slate-655 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer z-20"
+                      className="p-1.5 px-2.5 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-850 text-slate-655 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer z-20 disabled:opacity-50"
                     >
                       <Calendar className="w-3.5 h-3.5 text-violet-555 dark:text-violet-400" />
                       <span className="text-xs font-semibold">Pilih Tanggal</span>
@@ -704,9 +725,13 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
                 </div>
               </div>
               <div className="mt-4">
-                <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100">
-                  {totalCurrentStock} Pcs
-                </h3>
+                {productsLoading || stockInLoading || ordersLoading ? (
+                  <Skeleton className="h-8 w-24" />
+                ) : (
+                  <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100">
+                    {totalCurrentStock} Pcs
+                  </h3>
+                )}
                 <p className="text-xs text-slate-500 mt-1 font-medium">Stok fisik setelah dikurangi pesanan</p>
               </div>
             </Card>
@@ -759,51 +784,64 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredLogs.map((log) => (
-                      <TableRow key={log.id}>
-                        <TableCell className="font-mono text-xs text-slate-500 dark:text-slate-400">
-                          {new Date(log.date).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "2-digit" })}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={log.type === "masuk" ? "success" : "danger"}>
-                            {log.type === "masuk" ? "Masuk" : "Keluar"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="font-semibold text-slate-800 dark:text-slate-200">
-                          {log.productName}
-                        </TableCell>
-                        <TableCell className="text-center font-mono font-bold">
-                          {log.type === "masuk" ? "+" : "-"}
-                          {log.qty} pcs
-                        </TableCell>
-                        <TableCell className="text-xs text-slate-550 dark:text-slate-400 max-w-[150px] truncate italic" title={log.notes}>
-                          {log.notes}
-                        </TableCell>
-                        <TableCell className="text-center">
-                          {log.type === "masuk" ? (
-                            <div className="flex items-center justify-center gap-1.5">
-                              <button
-                                onClick={() => handleLogEditClick(log)}
-                                className="p-1 text-slate-500 dark:text-slate-400 hover:text-violet-650 dark:hover:text-violet-400 transition-colors cursor-pointer"
-                                title="Edit Transaksi"
-                              >
-                                <Edit className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                onClick={() => handleLogDelete(log.id)}
-                                className="p-1 text-slate-500 dark:text-slate-400 hover:text-rose-650 dark:hover:text-rose-450 transition-colors cursor-pointer"
-                                title="Hapus Transaksi"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          ) : (
-                            <span className="text-slate-500 dark:text-slate-600 text-[10px] italic">Simulasi</span>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                    {filteredLogs.length === 0 && (
+                    {stockInLoading || ordersLoading ? (
+                      Array.from({ length: 5 }).map((_, idx) => (
+                        <TableRow key={`ske-tx-${idx}`}>
+                          <TableCell><Skeleton className="h-4 w-16" /></TableCell>
+                          <TableCell><Skeleton className="h-5 w-12" /></TableCell>
+                          <TableCell><Skeleton className="h-4 w-28" /></TableCell>
+                          <TableCell><Skeleton className="h-4 w-12 mx-auto" /></TableCell>
+                          <TableCell><Skeleton className="h-4 w-20" /></TableCell>
+                          <TableCell><Skeleton className="h-6 w-12 mx-auto" /></TableCell>
+                        </TableRow>
+                      ))
+                    ) : (
+                      filteredLogs.map((log) => (
+                        <TableRow key={log.id}>
+                          <TableCell className="font-mono text-xs text-slate-500 dark:text-slate-400">
+                            {new Date(log.date).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "2-digit" })}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={log.type === "masuk" ? "success" : "danger"}>
+                              {log.type === "masuk" ? "Masuk" : "Keluar"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="font-semibold text-slate-800 dark:text-slate-200">
+                            {log.productName}
+                          </TableCell>
+                          <TableCell className="text-center font-mono font-bold">
+                            {log.type === "masuk" ? "+" : "-"}
+                            {log.qty} pcs
+                          </TableCell>
+                          <TableCell className="text-xs text-slate-550 dark:text-slate-400 max-w-[150px] truncate italic" title={log.notes}>
+                            {log.notes}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            {log.type === "masuk" ? (
+                              <div className="flex items-center justify-center gap-1.5">
+                                <button
+                                  onClick={() => handleLogEditClick(log)}
+                                  className="p-1 text-slate-500 dark:text-slate-400 hover:text-violet-650 dark:hover:text-violet-400 transition-colors cursor-pointer"
+                                  title="Edit Transaksi"
+                                >
+                                  <Edit className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => handleLogDelete(log.id)}
+                                  className="p-1 text-slate-500 dark:text-slate-400 hover:text-rose-650 dark:hover:text-rose-455 transition-colors cursor-pointer"
+                                  title="Hapus Transaksi"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="text-slate-500 dark:text-slate-600 text-[10px] italic">Simulasi</span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                    {!stockInLoading && !ordersLoading && filteredLogs.length === 0 && (
                       <TableRow>
                         <TableCell colSpan={6} className="text-center py-8 text-slate-400 dark:text-slate-500">
                           Tidak ada data transaksi ditemukan.
@@ -822,7 +860,22 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
                 <p className="text-xs text-slate-500 mt-0.5">Dikelompokkan per produk dan variasi.</p>
               </div>
 
-              {groupedProducts.length === 0 ? (
+              {productsLoading || stockInLoading || ordersLoading ? (
+                <div className="space-y-3">
+                  <div className="p-3 border border-slate-200 dark:border-slate-800 rounded-lg space-y-2">
+                    <Skeleton className="h-4 w-32" />
+                    <Skeleton className="h-3 w-16" />
+                  </div>
+                  <div className="p-3 border border-slate-200 dark:border-slate-800 rounded-lg space-y-2">
+                    <Skeleton className="h-4 w-28" />
+                    <Skeleton className="h-3 w-12" />
+                  </div>
+                  <div className="p-3 border border-slate-200 dark:border-slate-800 rounded-lg space-y-2">
+                    <Skeleton className="h-4 w-36" />
+                    <Skeleton className="h-3 w-20" />
+                  </div>
+                </div>
+              ) : groupedProducts.length === 0 ? (
                 <p className="text-center text-slate-400 dark:text-slate-500 text-xs py-8 bg-slate-50 dark:bg-slate-900/20 rounded-xl border border-slate-200 dark:border-slate-850">
                   Tidak ada data produk ditemukan.
                 </p>
@@ -939,59 +992,72 @@ export function InventoryPage({ products, rawProducts, inventoryLogs, onRefreshD
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rawProducts
-                  .filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()))
-                  .map((product) => {
-                    // Extract sizes list
-                    const sizesList = (product.product_sizes || []).map(s => s.size_label).join(", ");
-                    // Extract active variants list
-                    const variantsList = (product.product_variants || [])
-                      .map(v => v.variant_label + (!v.is_active ? " (non-aktif)" : ""))
-                      .join(", ");
+                {productsLoading ? (
+                  Array.from({ length: 5 }).map((_, idx) => (
+                    <TableRow key={`ske-prod-${idx}`}>
+                      <TableCell><Skeleton className="h-4 w-28" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-16" /></TableCell>
+                      <TableCell><Skeleton className="h-4 w-12" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-10 mx-auto" /></TableCell>
+                      <TableCell><Skeleton className="h-4 w-40" /></TableCell>
+                      <TableCell><Skeleton className="h-6 w-12 mx-auto" /></TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  rawProducts
+                    .filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()))
+                    .map((product) => {
+                      // Extract sizes list
+                      const sizesList = (product.product_sizes || []).map(s => s.size_label).join(", ");
+                      // Extract active variants list
+                      const variantsList = (product.product_variants || [])
+                        .map(v => v.variant_label + (!v.is_active ? " (non-aktif)" : ""))
+                        .join(", ");
 
-                    return (
-                      <TableRow key={product.id}>
-                        <TableCell className="font-bold text-slate-800 dark:text-slate-200">
-                          {product.name}
-                        </TableCell>
-                        <TableCell>
-                          <span className="text-xs px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-850 text-slate-600 dark:text-slate-400 font-medium">
-                            {product.category || "Lainnya"}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-xs text-slate-600 dark:text-slate-350">
-                          {product.variant_type || "Warna"}
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <Badge variant={product.has_size ? "success" : "secondary"}>
-                            {product.has_size ? "Ya" : "Tidak"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="max-w-[250px] truncate text-xs text-slate-500 dark:text-slate-400" title={variantsList || sizesList}>
-                          {product.has_size ? `Ukuran: ${sizesList}` : `Varian: ${variantsList}`}
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <div className="flex items-center justify-center gap-2">
-                            <button
-                              onClick={() => handleProductEditClick(product)}
-                              className="p-1 text-slate-500 dark:text-slate-400 hover:text-violet-600 dark:hover:text-violet-400 transition-colors cursor-pointer"
-                              title="Edit Detail Produk"
-                            >
-                              <Edit className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => handleProductDelete(product.id)}
-                              className="p-1 text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-450 transition-colors cursor-pointer"
-                              title="Hapus Produk & Data Terkait"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                {rawProducts.length === 0 && (
+                      return (
+                        <TableRow key={product.id}>
+                          <TableCell className="font-bold text-slate-800 dark:text-slate-200">
+                            {product.name}
+                          </TableCell>
+                          <TableCell>
+                            <span className="text-xs px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-850 text-slate-600 dark:text-slate-400 font-medium">
+                              {product.category || "Lainnya"}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-xs text-slate-600 dark:text-slate-350">
+                            {product.variant_type || "Warna"}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <Badge variant={product.has_size ? "success" : "secondary"}>
+                              {product.has_size ? "Ya" : "Tidak"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="max-w-[250px] truncate text-xs text-slate-500 dark:text-slate-400" title={variantsList || sizesList}>
+                            {product.has_size ? `Ukuran: ${sizesList}` : `Varian: ${variantsList}`}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <div className="flex items-center justify-center gap-2">
+                              <button
+                                onClick={() => handleProductEditClick(product)}
+                                className="p-1 text-slate-500 dark:text-slate-400 hover:text-violet-650 dark:hover:text-violet-400 transition-colors cursor-pointer"
+                                title="Edit Detail Produk"
+                              >
+                                <Edit className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleProductDelete(product.id)}
+                                className="p-1 text-slate-500 dark:text-slate-400 hover:text-rose-650 dark:hover:text-rose-455 transition-colors cursor-pointer"
+                                title="Hapus Produk & Data Terkait"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                )}
+                {!productsLoading && rawProducts.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={6} className="text-center py-8 text-slate-400 dark:text-slate-550">
                       Belum ada produk di database. Silakan tambah produk baru.

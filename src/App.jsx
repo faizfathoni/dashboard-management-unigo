@@ -53,9 +53,25 @@ function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   // 2. Data states
-  const [rawProducts, setRawProducts] = useState([]);
-  const [stockInLogs, setStockInLogs] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [rawProducts, setRawProducts] = useState(() => {
+    const saved = localStorage.getItem("unigo_supabase_products");
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [stockInLogs, setStockInLogs] = useState(() => {
+    const saved = localStorage.getItem("unigo_supabase_stock_in");
+    return saved ? JSON.parse(saved) : [];
+  });
+  
+  const [productsLoading, setProductsLoading] = useState(() => {
+    return !localStorage.getItem("unigo_supabase_products");
+  });
+  const [stockInLoading, setStockInLoading] = useState(() => {
+    return !localStorage.getItem("unigo_supabase_stock_in");
+  });
+  const [ordersLoading, setOrdersLoading] = useState(() => {
+    return !localStorage.getItem("unigo_supabase_orders");
+  });
+  
   const [errorMsg, setErrorMsg] = useState("");
 
   const [orders, setOrders] = useState(() => {
@@ -63,7 +79,10 @@ function App() {
     return saved ? JSON.parse(saved) : [];
   });
 
-  const [supabaseOrders, setSupabaseOrders] = useState([]);
+  const [supabaseOrders, setSupabaseOrders] = useState(() => {
+    const saved = localStorage.getItem("unigo_supabase_orders");
+    return saved ? JSON.parse(saved) : [];
+  });
 
   const [lastSynced, setLastSynced] = useState(() => {
     const saved = localStorage.getItem("unigo_last_synced");
@@ -88,21 +107,58 @@ function App() {
   };
 
   // 2. Fetch data from Supabase
-  const loadDataFromSupabase = async () => {
-    try {
-      setErrorMsg("");
-      const prods = await fetchProducts();
-      const logs = await fetchStockIn();
-      const dbOrders = await fetchOrders();
-      setRawProducts(prods);
-      setStockInLogs(logs);
-      setSupabaseOrders(dbOrders);
-    } catch (err) {
-      console.error("Failed to load data from Supabase:", err);
-      setErrorMsg("Gagal memuat data dari database Supabase. Periksa koneksi internet Anda.");
-    } finally {
-      setIsLoading(false);
+  const loadDataFromSupabase = async (forceShowLoading = false) => {
+    setErrorMsg("");
+    
+    if (forceShowLoading) {
+      setProductsLoading(true);
+      setStockInLoading(true);
+      setOrdersLoading(true);
+    } else {
+      const hasCachedProducts = !!localStorage.getItem("unigo_supabase_products");
+      const hasCachedStockIn = !!localStorage.getItem("unigo_supabase_stock_in");
+      const hasCachedOrders = !!localStorage.getItem("unigo_supabase_orders");
+
+      if (!hasCachedProducts) setProductsLoading(true);
+      if (!hasCachedStockIn) setStockInLoading(true);
+      if (!hasCachedOrders) setOrdersLoading(true);
     }
+
+    fetchProducts()
+      .then((prods) => {
+        setRawProducts(prods);
+        localStorage.setItem("unigo_supabase_products", JSON.stringify(prods));
+        setProductsLoading(false);
+      })
+      .catch((err) => {
+        console.error("Failed to load products:", err);
+        setErrorMsg("Gagal memuat data produk dari database Supabase.");
+        setProductsLoading(false);
+      });
+
+    fetchStockIn()
+      .then((logs) => {
+        setStockInLogs(logs);
+        localStorage.setItem("unigo_supabase_stock_in", JSON.stringify(logs));
+        setStockInLoading(false);
+      })
+      .catch((err) => {
+        console.error("Failed to load stock in logs:", err);
+        setErrorMsg("Gagal memuat log stok dari database Supabase.");
+        setStockInLoading(false);
+      });
+
+    fetchOrders()
+      .then((dbOrders) => {
+        setSupabaseOrders(dbOrders);
+        localStorage.setItem("unigo_supabase_orders", JSON.stringify(dbOrders));
+        setOrdersLoading(false);
+      })
+      .catch((err) => {
+        console.error("Failed to load orders:", err);
+        setErrorMsg("Gagal memuat data pesanan dari database Supabase.");
+        setOrdersLoading(false);
+      });
   };
 
   useEffect(() => {
@@ -175,7 +231,9 @@ function App() {
         buyerUsername: dbOrder.buyer_username,
         paymentMethod: dbOrder.payment_method,
         city: dbOrder.city,
-        province: dbOrder.province
+        province: dbOrder.province,
+        retur_check: dbOrder.retur_check,
+        retur_checked_at: dbOrder.retur_checked_at
       };
     });
 
@@ -183,7 +241,9 @@ function App() {
   }, [supabaseOrders, orders]);
 
   // Flat mapped inventory items representing individual variants
-  const products = mapInventoryItems(rawProducts, stockInLogs, allOrders);
+  const products = React.useMemo(() => {
+    return mapInventoryItems(rawProducts, stockInLogs, allOrders);
+  }, [rawProducts, stockInLogs, allOrders]);
 
   // Combined logs for incoming (Supabase stock_in) and outgoing (mock sales orders)
   const combinedLogs = React.useMemo(() => {
@@ -332,49 +392,54 @@ function App() {
 
         {/* Inner dashboard content page container */}
         <main className="flex-1 p-4 md:p-6 lg:p-8 max-w-7xl w-full mx-auto relative">
-          {isLoading ? (
-            <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-50/80 dark:bg-slate-950/80 z-50">
-              <Loader2 className="w-12 h-12 text-violet-500 animate-spin" />
-              <p className="text-sm font-semibold text-slate-500 dark:text-slate-400 mt-4">Memuat Data dari Supabase...</p>
-            </div>
-          ) : errorMsg ? (
-            <div className="p-4 rounded-lg bg-rose-500/10 border border-rose-500/20 text-sm text-rose-400 text-center max-w-md mx-auto mt-20">
-              <p className="font-semibold">{errorMsg}</p>
+          {errorMsg && (
+            <div className="mb-6 p-4 rounded-lg bg-rose-500/10 border border-rose-500/20 text-sm text-rose-600 dark:text-rose-400 flex items-center justify-between">
+              <span className="font-semibold">{errorMsg}</span>
               <button 
-                onClick={loadDataFromSupabase}
-                className="mt-4 px-4 py-2 bg-rose-500 text-white rounded-lg text-xs font-bold hover:bg-rose-600 transition-colors"
+                onClick={() => setErrorMsg("")}
+                className="px-2.5 py-1 bg-rose-500 text-white rounded text-xs font-bold hover:bg-rose-600 transition-colors cursor-pointer"
               >
-                Coba Lagi
+                Tutup
               </button>
             </div>
-          ) : (
-            <>
-              {activeTab === "overview" && (
-                <DashboardOverview
-                  orders={allOrders}
-                  inventoryLogs={combinedLogs}
-                  products={products}
-                />
-              )}
-
-              {activeTab === "inventory" && (
-                <InventoryPage
-                  products={products}
-                  rawProducts={rawProducts}
-                  inventoryLogs={combinedLogs}
-                  onRefreshData={loadDataFromSupabase}
-                />
-              )}
-
-              {activeTab === "orders" && (
-                <OrdersPage orders={allOrders} onRefreshData={loadDataFromSupabase} />
-              )}
-
-              {activeTab === "settings" && (
-                <SettingsPage />
-              )}
-            </>
           )}
+
+          <>
+            {activeTab === "overview" && (
+              <DashboardOverview
+                orders={allOrders}
+                inventoryLogs={combinedLogs}
+                products={products}
+                productsLoading={productsLoading}
+                stockInLoading={stockInLoading}
+                ordersLoading={ordersLoading}
+              />
+            )}
+
+            {activeTab === "inventory" && (
+              <InventoryPage
+                products={products}
+                rawProducts={rawProducts}
+                inventoryLogs={combinedLogs}
+                onRefreshData={loadDataFromSupabase}
+                productsLoading={productsLoading}
+                stockInLoading={stockInLoading}
+                ordersLoading={ordersLoading}
+              />
+            )}
+
+            {activeTab === "orders" && (
+              <OrdersPage
+                orders={allOrders}
+                onRefreshData={loadDataFromSupabase}
+                ordersLoading={ordersLoading}
+              />
+            )}
+
+            {activeTab === "settings" && (
+              <SettingsPage />
+            )}
+          </>
         </main>
       </div>
     </div>

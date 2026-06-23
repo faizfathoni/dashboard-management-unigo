@@ -91,3 +91,10 @@
     background-position: -200% 0;
   }
 }
+
+/* QR code reader overrides */
+#reader video {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+}
