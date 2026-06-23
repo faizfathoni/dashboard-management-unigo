@@ -66,7 +66,7 @@ export function OrdersPage({ orders, onRefreshData }) {
     if (!dateStr) return null;
     const cleaned = dateStr.trim();
     if (!cleaned) return null;
-    
+
     // Try matching DD/MM/YYYY HH:mm:ss
     const dmyRegex = /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})\s+(\d{1,2}):(\d{1,2}):(\d{1,2})$/;
     const match = cleaned.match(dmyRegex);
@@ -74,7 +74,7 @@ export function OrdersPage({ orders, onRefreshData }) {
       const [_, day, month, year, hour, minute, second] = match;
       return new Date(parseInt(year), parseInt(month) - 1, parseInt(day), parseInt(hour), parseInt(minute), parseInt(second)).toISOString();
     }
-    
+
     const parsed = new Date(cleaned);
     if (!isNaN(parsed.getTime())) {
       return parsed.toISOString();
@@ -111,7 +111,7 @@ export function OrdersPage({ orders, onRefreshData }) {
         }
 
         const dataRows = rows.slice(1).filter(r => r.length > 1 || (r.length === 1 && r[0].trim() !== ''));
-        
+
         setParsedSummary({
           filename: file.name,
           totalRows: dataRows.length
@@ -152,14 +152,14 @@ export function OrdersPage({ orders, onRefreshData }) {
         const orderId = orderIdRaw ? orderIdRaw.trim() : "";
         let orderStatus = getVal(row, "Order Status") || getVal(row, "status");
         const cancelReturnType = getVal(row, "Cancelation/Return Type") || getVal(row, "cancelation_return_type");
-        if (cancelReturnType && cancelReturnType.trim().toLowerCase() === "return/refund") { 
+        if (cancelReturnType && cancelReturnType.trim().toLowerCase() === "return/refund") {
           orderStatus = "Return/Refund";
         }
-        
+
         const productName = getVal(row, "Product Name") || getVal(row, "product_name");
         const variation = getVal(row, "Variation") || getVal(row, "varian");
         const quantity = parseInt(getVal(row, "Quantity") || getVal(row, "qty") || "1", 10);
-        
+
         const priceStr = getVal(row, "SKU Subtotal After Discount") || getVal(row, "price") || getVal(row, "SKU Unit Original Price") || "0";
         const price = parseFloat(priceStr.replace(/[^0-9\.\-]/g, '')) || 0;
 
@@ -174,7 +174,7 @@ export function OrdersPage({ orders, onRefreshData }) {
         const province = getVal(row, "Province") || getVal(row, "provinsi");
         const city = getVal(row, "Regency and City") || getVal(row, "city") || getVal(row, "kota");
         const paymentMethod = getVal(row, "Payment Method") || getVal(row, "payment_method");
-        
+
         const createdTimeStr = getVal(row, "Created Time") || getVal(row, "created_time") || getVal(row, "date");
         const createdTime = parseCSVDate(createdTimeStr);
 
@@ -240,7 +240,7 @@ export function OrdersPage({ orders, onRefreshData }) {
       });
 
       setCsvSuccess(`Berhasil mengimpor ${deDuplicatedOrders.length} pesanan ke database!`);
-      
+
       if (onRefreshData) {
         await onRefreshData();
       }
@@ -298,53 +298,53 @@ export function OrdersPage({ orders, onRefreshData }) {
       if (isNaN(orderDate.getTime())) return false;
 
       const now = new Date();
-      
+
       // 'today': from 00:00:00 today to now
       if (timeRange === "today") {
         const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         return orderDate >= startOfToday && orderDate <= now;
       }
-      
+
       // 'yesterday': from 00:00:00 yesterday to 23:59:59 yesterday
       if (timeRange === "yesterday") {
         const startOfYesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
         const endOfYesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, -1);
         return orderDate >= startOfYesterday && orderDate <= endOfYesterday;
       }
-      
+
       // '7days': last 7 days (from 7 days ago at 00:00:00 to now)
       if (timeRange === "7days") {
         const sevenDaysAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
         return orderDate >= sevenDaysAgo && orderDate <= now;
       }
-      
+
       // '30days': last 30 days (from 30 days ago at 00:00:00 to now)
       if (timeRange === "30days") {
         const thirtyDaysAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30);
         return orderDate >= thirtyDaysAgo && orderDate <= now;
       }
-      
+
       // 'custom': custom range selected by user
       if (timeRange === "custom") {
         if (!customStartDate && !customEndDate) return true;
-        
+
         let start = null;
         if (customStartDate) {
           start = new Date(customStartDate);
           start.setHours(0, 0, 0, 0);
         }
-        
+
         let end = null;
         if (customEndDate) {
           end = new Date(customEndDate);
           end.setHours(23, 59, 59, 999);
         }
-        
+
         if (start && orderDate < start) return false;
         if (end && orderDate > end) return false;
         return true;
       }
-      
+
       return true;
     })();
 
@@ -361,11 +361,10 @@ export function OrdersPage({ orders, onRefreshData }) {
             <button
               key={chan}
               onClick={() => setActiveChannel(chan)}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer whitespace-nowrap ${
-                activeChannel === chan
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer whitespace-nowrap ${activeChannel === chan
                   ? "bg-violet-600 text-white shadow-md"
                   : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900/60"
-              }`}
+                }`}
             >
               {chan === "All" ? "Semua Saluran" : chan}
             </button>
@@ -381,7 +380,7 @@ export function OrdersPage({ orders, onRefreshData }) {
               placeholder="Cari ID Pesanan / nama pembeli..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="glass-input pl-9 w-full"
+              className="glass-input !pl-9 w-full"
             />
           </div>
           {activeChannel === "TikTok/Tokopedia" && (
@@ -407,11 +406,10 @@ export function OrdersPage({ orders, onRefreshData }) {
             <button
               key={stat.id}
               onClick={() => setActiveStatus(stat.id)}
-              className={`px-2.5 py-1 text-[11px] font-medium rounded-full border transition-all cursor-pointer whitespace-nowrap ${
-                activeStatus === stat.id
+              className={`px-2.5 py-1 text-[11px] font-medium rounded-full border transition-all cursor-pointer whitespace-nowrap ${activeStatus === stat.id
                   ? "bg-violet-500/10 dark:bg-violet-500/15 border-violet-500/30 dark:border-violet-500/40 text-violet-600 dark:text-violet-300"
                   : "bg-white dark:bg-slate-950 border-slate-250 dark:border-slate-850 text-slate-500 hover:text-slate-800 dark:hover:text-slate-300"
-              }`}
+                }`}
             >
               {stat.label}
             </button>
@@ -437,11 +435,10 @@ export function OrdersPage({ orders, onRefreshData }) {
                 key={t.id}
                 type="button"
                 onClick={() => setTimeRange(t.id)}
-                className={`px-2.5 py-1 text-[11px] font-medium rounded-full border transition-all cursor-pointer whitespace-nowrap ${
-                  timeRange === t.id
+                className={`px-2.5 py-1 text-[11px] font-medium rounded-full border transition-all cursor-pointer whitespace-nowrap ${timeRange === t.id
                     ? "bg-violet-500/10 dark:bg-violet-500/15 border-violet-500/30 dark:border-violet-500/40 text-violet-600 dark:text-violet-300"
                     : "bg-white dark:bg-slate-950 border-slate-250 dark:border-slate-850 text-slate-500 hover:text-slate-800 dark:hover:text-slate-300"
-                }`}
+                  }`}
               >
                 {t.label}
               </button>
@@ -754,8 +751,8 @@ export function OrdersPage({ orders, onRefreshData }) {
                 <span className="font-mono text-violet-600 dark:text-violet-400">{importProgress}%</span>
               </div>
               <div className="w-full h-2 bg-slate-100 dark:bg-slate-900 rounded-full overflow-hidden border border-slate-200 dark:border-slate-800">
-                <div 
-                  className="h-full bg-gradient-to-r from-violet-500 to-indigo-500 transition-all duration-300 rounded-full" 
+                <div
+                  className="h-full bg-gradient-to-r from-violet-500 to-indigo-500 transition-all duration-300 rounded-full"
                   style={{ width: `${importProgress}%` }}
                 />
               </div>
