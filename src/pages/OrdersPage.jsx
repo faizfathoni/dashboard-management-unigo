@@ -1,16 +1,19 @@
-import React, { useState } from "react";
-import { Search, SlidersHorizontal, ArrowUpDown, Calendar, ExternalLink, Printer, Upload, AlertCircle, Check, Loader2 } from "lucide-react";
+import React, { useState, useEffect, useRef } from "react";
+import { Search, SlidersHorizontal, ArrowUpDown, Calendar, ExternalLink, Printer, Upload, AlertCircle, Check, Loader2, QrCode, Camera } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "../components/ui/Table";
 import { Badge } from "../components/ui/Badge";
 import { Dialog } from "../components/ui/Dialog";
-import { importOrders } from "../lib/db";
+import { importOrders, verifyReturnOrder, fetchPaginatedOrders } from "../lib/db";
+import { Html5Qrcode } from "html5-qrcode";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-export function OrdersPage({ orders, onRefreshData }) {
+export function OrdersPage({ orders, onRefreshData, ordersLoading }) {
   const [activeChannel, setActiveChannel] = useState("All"); // 'All', 'Shopee', 'TikTok/Tokopedia', 'Offline'
   const [activeStatus, setActiveStatus] = useState("All"); // 'All', 'pengiriman sukses', 'pembatalan', 'pengembalian retur', 'pengiriman gagal'
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
   const [selectedOrder, setSelectedOrder] = useState(null);
 
   // CSV Import states
@@ -27,6 +30,226 @@ export function OrdersPage({ orders, onRefreshData }) {
   const [timeRange, setTimeRange] = useState("all"); // 'all', 'today', 'yesterday', '7days', '30days', 'custom'
   const [customStartDate, setCustomStartDate] = useState("");
   const [customEndDate, setCustomEndDate] = useState("");
+
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+
+  // Paginated database state managed by TanStack Query
+  const queryClient = useQueryClient();
+
+  const { data, isLoading } = useQuery({
+    queryKey: [
+      "paginatedOrders",
+      currentPage,
+      rowsPerPage,
+      debouncedSearchQuery,
+      activeChannel,
+      activeStatus,
+      timeRange,
+      customStartDate,
+      customEndDate
+    ],
+    queryFn: () =>
+      fetchPaginatedOrders({
+        page: currentPage,
+        pageSize: rowsPerPage,
+        searchQuery: debouncedSearchQuery,
+        channel: activeChannel,
+        status: activeStatus,
+        timeRange,
+        customStartDate,
+        customEndDate
+      }),
+    placeholderData: (previousData) => previousData,
+  });
+
+  const localOrders = data?.orders || [];
+  const totalCount = data?.totalCount || 0;
+  const localLoading = isLoading;
+
+  // QR Scan states
+  const [isScanModalOpen, setIsScanModalOpen] = useState(false);
+  const [scanResult, setScanResult] = useState("");
+  const [scanError, setScanError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
+  const [matchedReturnOrder, setMatchedReturnOrder] = useState(null);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const scannerRef = useRef(null);
+
+  // Search input debounce logic
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 500);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [searchQuery]);
+
+  // Sync/Re-fetch when parent orders prop changes (due to imports, sync revalidations, etc.)
+  useEffect(() => {
+    queryClient.invalidateQueries({ queryKey: ["paginatedOrders"] });
+  }, [orders, queryClient]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeChannel, activeStatus, debouncedSearchQuery, timeRange, customStartDate, customEndDate]);
+
+  const handleQrScanSuccess = async (trackingId) => {
+    if (isVerifying) return;
+    setIsVerifying(true);
+    setScanResult(trackingId);
+    setScanError("");
+    setSuccessMessage("");
+
+    // Stop scanner immediately to avoid multiple scans
+    if (scannerRef.current && scannerRef.current.isScanning) {
+      try {
+        await scannerRef.current.stop();
+      } catch (err) {
+        console.error("Error stopping scanner on success:", err);
+      }
+    }
+
+    try {
+      const result = await verifyReturnOrder(trackingId);
+      if (result) {
+        const matched = result.order;
+        const channelName = result.platform === "shopee" ? "Shopee" : "TikTok/Tokopedia";
+
+        let productName = matched.product_name;
+        if (!productName && matched.raw_data) {
+          const keys = Object.keys(matched.raw_data);
+          const nameKey = keys.find(k => k.toLowerCase() === "product name" || k.toLowerCase() === "product_name");
+          if (nameKey) productName = matched.raw_data[nameKey];
+        }
+
+        let variation = matched.variation;
+        if (!variation && matched.raw_data) {
+          const keys = Object.keys(matched.raw_data);
+          const varKey = keys.find(k => k.toLowerCase() === "variation" || k.toLowerCase() === "varian");
+          if (varKey) variation = matched.raw_data[varKey];
+        }
+
+        let quantity = matched.quantity;
+        if (!quantity && matched.raw_data) {
+          const keys = Object.keys(matched.raw_data);
+          const qtyKey = keys.find(k => k.toLowerCase() === "quantity" || k.toLowerCase() === "qty");
+          if (qtyKey) quantity = parseInt(matched.raw_data[qtyKey], 10);
+        }
+
+        setMatchedReturnOrder({
+          order_id: matched.order_id,
+          customer: matched.recipient || matched.buyer_username || (matched.raw_data ? (matched.raw_data.Recipient || matched.raw_data.recipient_name || matched.raw_data.customer) : "Pembeli"),
+          product_name: productName || "Produk",
+          variation: variation || "",
+          quantity: quantity || 1,
+          channel: channelName,
+          tracking_id: matched.tracking_id || trackingId
+        });
+
+        setSuccessMessage("Pesanan ini telah tercheck kalau sudah diretur dan diterima oleh store.");
+
+        if (onRefreshData) {
+          await onRefreshData();
+        }
+
+        setTimeout(() => {
+          setIsScanModalOpen(false);
+          setMatchedReturnOrder(null);
+          setScanResult("");
+          setSuccessMessage("");
+          setIsVerifying(false);
+
+          // Apply filters requested by user
+          setActiveStatus("pengembalian retur"); // 'pengembalian retur' status corresponds to Retur
+          setTimeRange("all"); // 'all' time range corresponds to 'semua waktu'
+          setActiveChannel(channelName); // channel of the verified return order
+        }, 4000);
+
+      } else {
+        setScanError(`Tidak ada pesanan cocok dengan ID Tracking / Resi "${trackingId}"`);
+        setIsVerifying(false);
+
+        // Restart scanner after 3.5 seconds so they can scan another code
+        setTimeout(() => {
+          setScanResult("");
+          setScanError("");
+          if (isScanModalOpen && scannerRef.current && !scannerRef.current.isScanning) {
+            scannerRef.current.start(
+              { facingMode: "environment" },
+              { fps: 10, qrbox: { width: 250, height: 250 } },
+              (decodedText) => handleQrScanSuccess(decodedText),
+              () => { }
+            ).catch(err => console.error("Failed to restart scanner:", err));
+          }
+        }, 3500);
+      }
+    } catch (err) {
+      console.error("Error verifying return order:", err);
+      setScanError(`Error verifikasi: ${err.message || err}`);
+      setIsVerifying(false);
+    }
+  };
+
+  const handleCloseScanModal = () => {
+    setIsScanModalOpen(false);
+    setMatchedReturnOrder(null);
+    setScanResult("");
+    setScanError("");
+    setSuccessMessage("");
+    setIsVerifying(false);
+  };
+
+  useEffect(() => {
+    let html5QrCode;
+    let isMounted = true;
+
+    if (isScanModalOpen && !matchedReturnOrder) {
+      const timer = setTimeout(() => {
+        const element = document.getElementById("reader");
+        if (element && isMounted) {
+          html5QrCode = new Html5Qrcode("reader");
+          scannerRef.current = html5QrCode;
+
+          html5QrCode.start(
+            { facingMode: "environment" },
+            { fps: 10, qrbox: { width: 250, height: 250 } },
+            (decodedText) => {
+              if (isMounted) {
+                handleQrScanSuccess(decodedText);
+              }
+            },
+            () => { }
+          ).catch(err => {
+            console.error("Failed to start camera scan:", err);
+            if (isMounted) {
+              setScanError("Kamera gagal diakses. Pastikan izin kamera telah diberikan.");
+            }
+          });
+        }
+      }, 150);
+
+      return () => {
+        isMounted = false;
+        clearTimeout(timer);
+        if (html5QrCode) {
+          try {
+            if (html5QrCode.isScanning) {
+              html5QrCode.stop().catch(err => {
+                console.error("Failed to stop scanner in promise:", err);
+              });
+            }
+          } catch (err) {
+            console.error("Failed to stop scanner synchronously in cleanup:", err);
+          }
+        }
+        scannerRef.current = null;
+      };
+    }
+  }, [isScanModalOpen, !matchedReturnOrder]);
 
   const parseCSV = (text) => {
     const lines = [];
@@ -283,73 +506,12 @@ export function OrdersPage({ orders, onRefreshData }) {
     }).format(num);
   };
 
-  // Perform search and filters
-  const filteredOrders = orders.filter((order) => {
-    const matchesChannel = activeChannel === "All" || order.channel === activeChannel;
-    const matchesStatus = activeStatus === "All" || order.status === activeStatus;
-    const matchesSearch =
-      order.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      order.customer.toLowerCase().includes(searchQuery.toLowerCase());
-
-    const matchesTimeRange = (() => {
-      if (timeRange === "all") return true;
-      if (!order.date) return false;
-      const orderDate = new Date(order.date);
-      if (isNaN(orderDate.getTime())) return false;
-
-      const now = new Date();
-
-      // 'today': from 00:00:00 today to now
-      if (timeRange === "today") {
-        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        return orderDate >= startOfToday && orderDate <= now;
-      }
-
-      // 'yesterday': from 00:00:00 yesterday to 23:59:59 yesterday
-      if (timeRange === "yesterday") {
-        const startOfYesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
-        const endOfYesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, -1);
-        return orderDate >= startOfYesterday && orderDate <= endOfYesterday;
-      }
-
-      // '7days': last 7 days (from 7 days ago at 00:00:00 to now)
-      if (timeRange === "7days") {
-        const sevenDaysAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
-        return orderDate >= sevenDaysAgo && orderDate <= now;
-      }
-
-      // '30days': last 30 days (from 30 days ago at 00:00:00 to now)
-      if (timeRange === "30days") {
-        const thirtyDaysAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30);
-        return orderDate >= thirtyDaysAgo && orderDate <= now;
-      }
-
-      // 'custom': custom range selected by user
-      if (timeRange === "custom") {
-        if (!customStartDate && !customEndDate) return true;
-
-        let start = null;
-        if (customStartDate) {
-          start = new Date(customStartDate);
-          start.setHours(0, 0, 0, 0);
-        }
-
-        let end = null;
-        if (customEndDate) {
-          end = new Date(customEndDate);
-          end.setHours(23, 59, 59, 999);
-        }
-
-        if (start && orderDate < start) return false;
-        if (end && orderDate > end) return false;
-        return true;
-      }
-
-      return true;
-    })();
-
-    return matchesChannel && matchesStatus && matchesSearch && matchesTimeRange;
-  });
+  const totalRows = totalCount;
+  const totalPages = Math.ceil(totalRows / rowsPerPage) || 1;
+  const coercedCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
+  const startIndex = (coercedCurrentPage - 1) * rowsPerPage;
+  const endIndex = Math.min(startIndex + rowsPerPage, totalRows);
+  const paginatedOrders = localOrders;
 
   return (
     <div className="space-y-6">
@@ -383,6 +545,15 @@ export function OrdersPage({ orders, onRefreshData }) {
               className="glass-input !pl-9 w-full"
             />
           </div>
+          <Button
+            variant="outline"
+            size="sm"
+            icon={QrCode}
+            onClick={() => setIsScanModalOpen(true)}
+            className="border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-white dark:bg-slate-900/40 text-slate-700 dark:text-slate-300 whitespace-nowrap shrink-0 cursor-pointer"
+          >
+            Scan Retur QR
+          </Button>
           {activeChannel === "TikTok/Tokopedia" && (
             <Button
               variant="outline"
@@ -472,7 +643,7 @@ export function OrdersPage({ orders, onRefreshData }) {
             <div>
               <CardTitle>Daftar Pesanan Toko</CardTitle>
               <CardDescription>
-                Menampilkan {filteredOrders.length} pesanan hasil filter saat ini.
+                {totalRows === 0 ? "Menampilkan 0 pesanan" : `Menampilkan ${startIndex + 1}–${endIndex} dari ${totalRows} pesanan hasil filter saat ini.`}
               </CardDescription>
             </div>
             <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium font-mono uppercase bg-slate-100 dark:bg-slate-950/60 px-2.5 py-1 rounded border border-slate-200 dark:border-slate-850">
@@ -490,54 +661,154 @@ export function OrdersPage({ orders, onRefreshData }) {
                 <TableHead>Tanggal Masuk</TableHead>
                 <TableHead className="text-right">Total Transaksi</TableHead>
                 <TableHead className="text-center">Status</TableHead>
+                <TableHead className="text-center">Retur</TableHead>
                 <TableHead className="w-20 text-center">Aksi</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredOrders.map((order) => (
-                <TableRow key={order.id} className="cursor-pointer" onClick={() => setSelectedOrder(order)}>
-                  <TableCell className="font-mono text-xs font-semibold text-slate-500 dark:text-slate-300 hover:text-violet-600 dark:hover:text-violet-400 transition-colors">
-                    {order.id}
-                  </TableCell>
-                  <TableCell>
-                    <Badge>{order.channel}</Badge>
-                  </TableCell>
-                  <TableCell className="font-semibold text-slate-800 dark:text-slate-200">
-                    {order.customer}
-                  </TableCell>
-                  <TableCell className="text-slate-500 dark:text-slate-400">
-                    {new Date(order.date).toLocaleDateString("id-ID", {
-                      day: "numeric",
-                      month: "short",
-                      year: "numeric",
-                    })}
-                  </TableCell>
-                  <TableCell className="text-right font-mono font-semibold text-slate-800 dark:text-slate-200">
-                    {formatIDR(order.total)}
-                  </TableCell>
-                  <TableCell className="text-center">
-                    <Badge>{order.status}</Badge>
-                  </TableCell>
-                  <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setSelectedOrder(order)}
-                      icon={ExternalLink}
-                      className="h-8 w-8 p-0"
-                    />
-                  </TableCell>
-                </TableRow>
-              ))}
-              {filteredOrders.length === 0 && (
+              {ordersLoading || localLoading ? (
+                Array.from({ length: rowsPerPage }).map((_, idx) => (
+                  <TableRow key={`skeleton-${idx}`}>
+                    <TableCell><div className="h-4 bg-slate-200 dark:bg-slate-800 rounded animate-pulse w-24" /></TableCell>
+                    <TableCell><div className="h-5 bg-slate-200 dark:bg-slate-800 rounded animate-pulse w-16" /></TableCell>
+                    <TableCell><div className="h-4 bg-slate-200 dark:bg-slate-800 rounded animate-pulse w-28" /></TableCell>
+                    <TableCell><div className="h-4 bg-slate-200 dark:bg-slate-800 rounded animate-pulse w-20" /></TableCell>
+                    <TableCell className="text-right"><div className="h-4 bg-slate-200 dark:bg-slate-800 rounded animate-pulse w-20 ml-auto" /></TableCell>
+                    <TableCell className="text-center"><div className="h-5 bg-slate-200 dark:bg-slate-800 rounded animate-pulse w-24 mx-auto" /></TableCell>
+                    <TableCell className="text-center"><div className="h-5 bg-slate-200 dark:bg-slate-800 rounded animate-pulse w-8 mx-auto" /></TableCell>
+                    <TableCell className="text-center"><div className="h-8 bg-slate-200 dark:bg-slate-800 rounded animate-pulse w-8 mx-auto" /></TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                paginatedOrders.map((order) => (
+                  <TableRow key={order.id} className="cursor-pointer" onClick={() => setSelectedOrder(order)}>
+                    <TableCell className="font-mono text-xs font-semibold text-slate-500 dark:text-slate-300 hover:text-violet-600 dark:hover:text-violet-400 transition-colors">
+                      {order.id}
+                    </TableCell>
+                    <TableCell>
+                      <Badge>{order.channel}</Badge>
+                    </TableCell>
+                    <TableCell className="font-semibold text-slate-800 dark:text-slate-200">
+                      {order.customer}
+                    </TableCell>
+                    <TableCell className="text-slate-500 dark:text-slate-400">
+                      {new Date(order.date).toLocaleDateString("id-ID", {
+                        day: "numeric",
+                        month: "short",
+                        year: "numeric",
+                      })}
+                    </TableCell>
+                    <TableCell className="text-right font-mono font-semibold text-slate-800 dark:text-slate-200">
+                      {formatIDR(order.total)}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <Badge>{order.status}</Badge>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      {order.retur_check ? (
+                        <span className="text-emerald-500 font-bold text-lg" title={order.retur_checked_at ? `Checked at: ${new Date(order.retur_checked_at).toLocaleString()}` : 'Checked'}>✓</span>
+                      ) : (
+                        <span className="text-rose-500 font-bold text-lg">✕</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setSelectedOrder(order)}
+                        icon={ExternalLink}
+                        className="h-8 w-8 p-0"
+                      />
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+              {!ordersLoading && !localLoading && paginatedOrders.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-12 text-slate-400 dark:text-slate-500">
+                  <TableCell colSpan={8} className="text-center py-12 text-slate-400 dark:text-slate-500">
                     Tidak ada pesanan yang sesuai dengan filter atau pencarian Anda.
                   </TableCell>
                 </TableRow>
               )}
             </TableBody>
           </Table>
+
+          {/* Pagination and Row Limit selector */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-6 pt-4 border-t border-slate-100 dark:border-slate-850">
+            {/* Rows Per Page Selector */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500 dark:text-slate-400">Baris per halaman:</span>
+              <select
+                value={rowsPerPage}
+                onChange={(e) => {
+                  setRowsPerPage(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+                className="glass-input py-1 px-2.5 text-xs h-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded shadow-sm focus:outline-none focus:ring-1 focus:ring-violet-500 cursor-pointer"
+              >
+                <option value={5}>5</option>
+                <option value={10}>10</option>
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+            </div>
+
+            {/* Page navigation */}
+            <div className="flex items-center gap-1.5">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={coercedCurrentPage === 1}
+                className="h-8 px-2.5 text-xs cursor-pointer border-slate-200 dark:border-slate-800 disabled:opacity-50"
+              >
+                Sebelumnya
+              </Button>
+
+              {/* Page numbers */}
+              <div className="hidden sm:flex items-center gap-1">
+                {Array.from({ length: totalPages }, (_, i) => i + 1)
+                  .filter(page => {
+                    return page === 1 || page === totalPages || Math.abs(page - coercedCurrentPage) <= 1;
+                  })
+                  .map((page, index, array) => {
+                    const isPrevEllipsis = index > 0 && page - array[index - 1] > 1;
+                    return (
+                      <React.Fragment key={page}>
+                        {isPrevEllipsis && (
+                          <span className="px-2 text-slate-400 text-xs select-none">...</span>
+                        )}
+                        <button
+                          onClick={() => setCurrentPage(page)}
+                          className={`w-8 h-8 text-xs font-semibold rounded transition-colors cursor-pointer border ${coercedCurrentPage === page
+                              ? "bg-violet-600 border-violet-600 text-white"
+                              : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+                            }`}
+                        >
+                          {page}
+                        </button>
+                      </React.Fragment>
+                    );
+                  })}
+              </div>
+
+              {/* Mobile page indicator */}
+              <span className="sm:hidden text-xs text-slate-500 dark:text-slate-400 px-2 font-medium">
+                Halaman {coercedCurrentPage} dari {totalPages}
+              </span>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                disabled={coercedCurrentPage === totalPages}
+                className="h-8 px-2.5 text-xs cursor-pointer border-slate-200 dark:border-slate-800 disabled:opacity-50"
+              >
+                Selanjutnya
+              </Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
@@ -788,6 +1059,114 @@ export function OrdersPage({ orders, onRefreshData }) {
             </Button>
           </div>
         </form>
+      </Dialog>
+
+      {/* QR Code Scanner Dialog modal */}
+      <Dialog
+        isOpen={isScanModalOpen}
+        onClose={handleCloseScanModal}
+        title="Scan QR Code Barang Retur"
+        className="max-w-md"
+      >
+        <div className="space-y-4 pt-1">
+          {scanError && (
+            <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-xs text-rose-600 dark:text-rose-400 flex items-center gap-2 font-medium">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{scanError}</span>
+            </div>
+          )}
+
+          {successMessage && (
+            <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-2 font-medium">
+              <Check className="w-4 h-4 shrink-0" />
+              <span>{successMessage}</span>
+            </div>
+          )}
+
+          {!matchedReturnOrder ? (
+            <div className="space-y-3">
+              <div className="text-center py-2 text-xs text-slate-500 dark:text-slate-400">
+                Posisikan QR Code / Barcode label resi pengiriman barang retur di dalam kotak pemindaian di bawah ini.
+              </div>
+
+              {/* Camera viewport container */}
+              <div className="relative overflow-hidden rounded-xl bg-slate-900 border border-slate-200 dark:border-slate-800 aspect-video flex items-center justify-center">
+                <div id="reader" className="w-full h-full"></div>
+                {isVerifying && (
+                  <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-xs flex flex-col items-center justify-center gap-2 z-10">
+                    <Loader2 className="w-8 h-8 text-violet-500 animate-spin" />
+                    <span className="text-xs text-slate-205">Mencocokkan data resi...</span>
+                  </div>
+                )}
+              </div>
+
+              {scanResult && (
+                <div className="p-2.5 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-850 text-xs font-mono flex items-center gap-2">
+                  <span className="text-slate-400 shrink-0 font-sans">Terbaca:</span>
+                  <span className="text-slate-700 dark:text-slate-300 font-bold truncate">{scanResult}</span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-4 animate-in zoom-in-95 duration-300">
+              <div className="flex flex-col items-center justify-center gap-2 text-center py-4 bg-emerald-500/10 dark:bg-emerald-500/15 border border-emerald-500/20 rounded-xl">
+                <div className="w-12 h-12 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                  <Check className="w-6 h-6 stroke-[3]" />
+                </div>
+                <h4 className="text-sm font-bold text-emerald-600 dark:text-emerald-400 mt-2">
+                  Verifikasi Berhasil!
+                </h4>
+                <p className="text-xs text-slate-600 dark:text-slate-400 px-6 max-w-xs mt-1">
+                  Pesanan telah diverifikasi sebagai retur dan diterima oleh toko.
+                </p>
+              </div>
+
+              <div className="space-y-2.5 bg-slate-50/50 dark:bg-slate-900/40 border border-slate-205 dark:border-slate-805 p-4 rounded-xl text-xs">
+                <div className="grid grid-cols-3 gap-y-2 text-slate-600 dark:text-slate-450">
+                  <span className="font-semibold">ID Pesanan:</span>
+                  <span className="col-span-2 font-mono font-bold text-slate-800 dark:text-slate-200 select-all">{matchedReturnOrder.order_id}</span>
+
+                  <span className="font-semibold">Saluran:</span>
+                  <span className="col-span-2">
+                    <Badge>{matchedReturnOrder.channel}</Badge>
+                  </span>
+
+                  <span className="font-semibold">Pembeli:</span>
+                  <span className="col-span-2 font-semibold text-slate-800 dark:text-slate-200">{matchedReturnOrder.customer}</span>
+
+                  <span className="font-semibold">Produk:</span>
+                  <span className="col-span-2 text-slate-800 dark:text-slate-200 truncate" title={matchedReturnOrder.product_name}>
+                    {matchedReturnOrder.product_name}
+                  </span>
+
+                  {matchedReturnOrder.variation && (
+                    <>
+                      <span className="font-semibold">Varian:</span>
+                      <span className="col-span-2 text-slate-505 dark:text-slate-400">{matchedReturnOrder.variation}</span>
+                    </>
+                  )}
+
+                  <span className="font-semibold">Jumlah:</span>
+                  <span className="col-span-2 font-mono font-semibold">{matchedReturnOrder.quantity} pcs</span>
+
+                  <span className="font-semibold">No. Resi:</span>
+                  <span className="col-span-2 font-mono text-slate-505 dark:text-slate-400 truncate">{matchedReturnOrder.tracking_id}</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="flex items-center justify-end gap-2 border-t border-slate-200 dark:border-slate-800 pt-3 mt-4">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={handleCloseScanModal}
+            >
+              Tutup
+            </Button>
+          </div>
+        </div>
       </Dialog>
     </div>
   );
